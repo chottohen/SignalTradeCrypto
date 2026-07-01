@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+data/
+
+rapport_du_jour.md
+rapport_du_jour.html
+
+.venv/
+venv/
