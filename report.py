@@ -6,6 +6,7 @@ from formatting import format_price
 from signal_engine import SignalResult
 from signal_display import resolve_display_label
 from support_resistance import Level
+from supertrend import SupertrendStatus
 from trend_regime import TrendAlert
 
 
@@ -26,6 +27,8 @@ def build_report(
     fundamentals: dict,
     trend_info: dict[str, dict[str, object]] | None = None,
     levels_info: dict[str, dict[str, list[Level]]] | None = None,
+    power_law_info: dict | None = None,
+    supertrend_info: dict[str, SupertrendStatus] | None = None,
 ) -> str:
     lines = [f"# Rapport quotidien - {date.today().isoformat()}", ""]
 
@@ -38,6 +41,24 @@ def build_report(
     else:
         lines.append("- Fear & Greed Index: indisponible")
     lines.append("")
+
+    if power_law_info:
+        lines.append("## Loi de puissance BTC (contexte long terme)")
+        lines.append(
+            f"- Position dans le corridor: {power_law_info['position_pct']:.0f}% "
+            f"({power_law_info['label']})"
+        )
+        lines.append(f"- Prix actuel: {format_price(power_law_info['current_price'])}")
+        lines.append(f"- Ligne centrale du jour: {format_price(power_law_info['central_price'])}")
+        lines.append(
+            f"- Bande basse: {format_price(power_law_info['lower_band'])} | "
+            f"Bande haute: {format_price(power_law_info['upper_band'])}"
+        )
+        lines.append(
+            f"- Exposant ajuste: {power_law_info['exponent']:.2f} "
+            "(indicatif, ajuste sur l'historique BTC depuis 2010, pas un signal de trading)"
+        )
+        lines.append("")
 
     if trend_info:
         lines.append("## Tendance de fond (preservation du capital)")
@@ -58,6 +79,13 @@ def build_report(
         lines.append(f"### {r.symbol} — **{display_label}**")
         lines.append(f"- Prix: {format_price(r.close)}")
         lines.append(f"- ADX: {r.adx:.1f} | Pattern detecte: {r.pattern or 'aucun'}")
+        st: SupertrendStatus | None = supertrend_info.get(r.symbol) if supertrend_info else None
+        if st:
+            flip_note = " (retournement aujourd'hui)" if st.flipped_today else ""
+            lines.append(
+                f"- Supertrend (suivi serre): {st.direction} depuis {st.days_in_direction} j, "
+                f"ligne a {format_price(st.line)}{flip_note}"
+            )
         lines.append(f"- Rationale: {r.rationale}")
         if display_label == "RENFORCER":
             lines.append(

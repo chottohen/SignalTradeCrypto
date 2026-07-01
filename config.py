@@ -34,3 +34,9 @@ SR_MEDIUM_TERM_WINDOW = 10
 SR_MEDIUM_TERM_LOOKBACK_DAYS = 365
 SR_LONG_TERM_WINDOW = 30
 SR_LONG_TERM_LOOKBACK_DAYS = 1825
+
+# Parametres resserres par rapport au reglage classique (10, 3.0) pour un
+# suivi de tendance plus reactif, complementaire au golden/death cross lent
+# de trend_regime.py.
+SUPERTREND_PERIOD = 10
+SUPERTREND_MULTIPLIER = 2.0

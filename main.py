@@ -5,10 +5,12 @@ from data_fetcher import fetch_ohlcv
 from fundamental_filter import fundamental_context
 from historical_data import fetch_history
 from html_report import build_html_report
+from power_law import corridor_position, fetch_btc_full_history
 from report import build_report
 from risk_manager import apply_risk_management, enforce_global_exposure
 from signal_engine import compute_indicators, evaluate
 from support_resistance import analyze_symbol
+from supertrend import current_status as supertrend_status
 from trend_regime import current_trend_state, detect_trend_reversal_at
 from universe import get_watchlist
 from variations import compute_variations
@@ -19,10 +21,17 @@ def run_daily_scan() -> tuple[str, str]:
     now = pd.Timestamp.now("UTC").tz_localize(None)
     watchlist = get_watchlist(config.WATCHLIST_SIZE)
 
+    try:
+        power_law_info = corridor_position(fetch_btc_full_history())
+    except Exception as exc:
+        print(f"Loi de puissance BTC indisponible: {exc}")
+        power_law_info = None
+
     results = []
     trend_info = {}
     levels_info = {}
     variations_info = {}
+    supertrend_info = {}
     for symbol in watchlist:
         try:
             df = fetch_ohlcv(symbol, config.TIMEFRAME, config.CANDLES_HISTORY)
@@ -39,6 +48,7 @@ def run_daily_scan() -> tuple[str, str]:
                 "state": current_trend_state(df_ind),
                 "alert": detect_trend_reversal_at(symbol, df_ind, len(df_ind) - 1),
             }
+            supertrend_info[symbol] = supertrend_status(df)
 
             df_long = fetch_history(
                 symbol, config.TIMEFRAME, now - pd.Timedelta(days=config.SR_LONG_TERM_LOOKBACK_DAYS)
@@ -51,8 +61,10 @@ def run_daily_scan() -> tuple[str, str]:
             continue
 
     results = enforce_global_exposure(results)
-    markdown = build_report(results, fundamentals, trend_info, levels_info)
-    html = build_html_report(results, fundamentals, trend_info, levels_info, variations_info)
+    markdown = build_report(results, fundamentals, trend_info, levels_info, power_law_info, supertrend_info)
+    html = build_html_report(
+        results, fundamentals, trend_info, levels_info, variations_info, power_law_info, supertrend_info
+    )
     return markdown, html
 
 

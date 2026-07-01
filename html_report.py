@@ -6,6 +6,7 @@ from formatting import format_price
 from signal_engine import SignalResult
 from signal_display import nearest_pair, resolve_display_label
 from support_resistance import Level
+from supertrend import SupertrendStatus
 from trend_regime import TrendAlert
 
 LABEL_STYLE = {
@@ -47,7 +48,14 @@ h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
 .level-label { font-size: 13px; margin: 0; }
 .level-price { font-size: 14px; font-weight: 600; margin: 0; }
 .level-meta { font-size: 12px; margin: 2px 0 0; text-align: right; }
+.powerlaw-box { background: #FFFFFF; border: 1px solid #E3E1D8; border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; }
+.powerlaw-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 13px; }
+.powerlaw-bar { position: relative; height: 8px; border-radius: 4px; background: linear-gradient(to right, #639922, #F1EFE8, #A32D2D); margin-bottom: 4px; }
+.powerlaw-marker { position: absolute; top: -3px; width: 3px; height: 14px; border-radius: 2px; transform: translateX(-50%); background: #2C2C2A; }
+.powerlaw-labels { display: flex; justify-content: space-between; font-size: 11px; color: #5F5E5A; }
+.powerlaw-current { font-size: 13px; margin: 8px 0 0; }
 .footer { margin-top: 24px; font-size: 12px; color: #5F5E5A; }
+.supertrend-tag { display: inline-block; font-size: 12px; margin: 0 0 10px; padding: 2px 0; }
 """
 
 
@@ -93,11 +101,24 @@ def _level_block_html(kind_label: str, level: Level | None, current_price: float
     </div>"""
 
 
+def _supertrend_html(status: SupertrendStatus | None) -> str:
+    if not status:
+        return ""
+    color = GREEN if status.direction == "HAUSSIER" else RED
+    flip_note = " · retournement aujourd'hui" if status.flipped_today else ""
+    return (
+        f'<p class="supertrend-tag" style="color:{color};">'
+        f"Supertrend (suivi serré) : {status.direction.lower()} depuis {status.days_in_direction} j"
+        f"{flip_note}</p>"
+    )
+
+
 def _card_html(
     r: SignalResult,
     trend_entry: dict[str, object] | None,
     levels: dict[str, list[Level]] | None,
     variations: dict[str, float | None] | None,
+    supertrend: SupertrendStatus | None = None,
 ) -> str:
     display_label, watch_level = resolve_display_label(r.signal, r.close, levels)
     nearest_support, nearest_resistance = nearest_pair(levels, r.close) if levels else (None, None)
@@ -141,11 +162,43 @@ def _card_html(
       {_badge_html(display_label)}
     </div>
     <p class="rationale">{r.rationale}</p>
+    {_supertrend_html(supertrend)}
     {extra_note}
     {alert_html}
     {variations_html}
     {resistance_html}
     {support_html}
+  </div>"""
+
+
+def _power_law_html(info: dict | None) -> str:
+    if not info:
+        return ""
+    pct = max(0.0, min(100.0, info["position_pct"]))
+    if pct < 20:
+        color = "#3B6D11"
+    elif pct < 45:
+        color = "#639922"
+    elif pct < 65:
+        color = GRAY
+    elif pct < 85:
+        color = AMBER
+    else:
+        color = RED
+    return f"""
+  <p class="section-title">Loi de puissance BTC (contexte long terme)</p>
+  <div class="powerlaw-box">
+    <div class="powerlaw-top">
+      <span style="font-weight:600;color:{color};">{info['label']} — {pct:.0f}% du corridor</span>
+      <span style="color:#5F5E5A;">exposant ajusté : {info['exponent']:.2f}</span>
+    </div>
+    <div class="powerlaw-bar"><div class="powerlaw-marker" style="left:{pct:.1f}%;"></div></div>
+    <div class="powerlaw-labels">
+      <span>{format_price(info['lower_band'])}</span>
+      <span>ligne centrale : {format_price(info['central_price'])}</span>
+      <span>{format_price(info['upper_band'])}</span>
+    </div>
+    <p class="powerlaw-current">Prix BTC actuel : {format_price(info['current_price'])} USDT</p>
   </div>"""
 
 
@@ -155,10 +208,13 @@ def build_html_report(
     trend_info: dict[str, dict[str, object]] | None = None,
     levels_info: dict[str, dict[str, list[Level]]] | None = None,
     variations_info: dict[str, dict[str, float | None]] | None = None,
+    power_law_info: dict | None = None,
+    supertrend_info: dict[str, SupertrendStatus] | None = None,
 ) -> str:
     trend_info = trend_info or {}
     levels_info = levels_info or {}
     variations_info = variations_info or {}
+    supertrend_info = supertrend_info or {}
 
     dom = fundamentals.get("btc_dominance")
     fg = fundamentals.get("fear_greed")
@@ -184,7 +240,13 @@ def build_html_report(
         trend_html = f'<p class="section-title">Tendance de fond</p><div class="trend-list">{"".join(rows)}</div>'
 
     cards_html = "".join(
-        _card_html(r, trend_info.get(r.symbol), levels_info.get(r.symbol), variations_info.get(r.symbol))
+        _card_html(
+            r,
+            trend_info.get(r.symbol),
+            levels_info.get(r.symbol),
+            variations_info.get(r.symbol),
+            supertrend_info.get(r.symbol),
+        )
         for r in results
     )
 
@@ -200,6 +262,7 @@ def build_html_report(
   <h1>Rapport quotidien</h1>
   <p class="subtitle">{date.today().isoformat()}</p>
   {macro_html}
+  {_power_law_html(power_law_info)}
   {trend_html}
   <p class="section-title">Signaux par actif</p>
   <div class="grid">{cards_html}</div>

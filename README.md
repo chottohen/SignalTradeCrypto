@@ -36,7 +36,8 @@ universe.py              data_fetcher.py          fundamental_filter.py
 ```
 
 Orchestré quotidiennement par [main.py](main.py) (`python main.py`), qui écrit
-[rapport_du_jour.md](rapport_du_jour.md), sur les 50 actifs de [universe.py](universe.py).
+`rapport_du_jour.md` (texte) et `rapport_du_jour.html` (visuel, une carte par
+actif, sans dépendance externe) sur les 50 actifs de [universe.py](universe.py).
 
 ## Modules
 
@@ -50,11 +51,17 @@ Orchestré quotidiennement par [main.py](main.py) (`python main.py`), qui écrit
 | [patterns.py](patterns.py) | Détection de chandeliers (engulfing haussier/baissier, marteau, doji, étoile du matin/soir) |
 | [signal_engine.py](signal_engine.py) | Moteur de confluence : combine indicateurs + patterns pour émettre ACHAT/VENTE/CALME/À_SURVEILLER |
 | [risk_manager.py](risk_manager.py) | Stop-loss (ATR × multiplicateur), take-profit (ratio R:R), taille de position (% capital risqué), plafond d'exposition par actif et global |
+| [supertrend.py](supertrend.py) | Suivi de tendance serré et réactif (bande ATR type Supertrend) — informatif, complémentaire au signal tactique et au retournement de fond |
 | [fundamental_filter.py](fundamental_filter.py) | Contexte macro : dominance BTC (CoinGecko), Fear & Greed Index (alternative.me) |
 | [trend_regime.py](trend_regime.py) | Alerte de **retournement de tendance de fond** (golden/death cross EMA50/EMA200 confirmé par l'ADX) — préservation du capital |
 | [support_resistance.py](support_resistance.py) | Niveaux de support/résistance moyen terme et long terme (points pivots regroupés en zones) |
+| [power_law.py](power_law.py) | Loi de puissance BTC : position du prix dans le corridor de valorisation long terme |
+| [variations.py](variations.py) | Variations de prix veille / 7 jours / 30 jours |
+| [formatting.py](formatting.py) | Formatage partagé des prix (précision adaptative pour les tokens à très faible valeur) |
+| [signal_display.py](signal_display.py) | Logique partagée markdown/HTML pour résoudre le libellé affiché (ACHAT/VENTE/CALME/RENFORCER/ALLEGER) |
 | [report.py](report.py) | Assemble tout dans le rapport markdown quotidien |
-| [main.py](main.py) | Orchestrateur du scan quotidien |
+| [html_report.py](html_report.py) | Assemble tout dans un rapport HTML visuel (une carte par actif), sans dépendance externe |
+| [main.py](main.py) | Orchestrateur du scan quotidien, écrit `rapport_du_jour.md` et `rapport_du_jour.html` |
 | [backtester.py](backtester.py) | Moteur de backtest jour par jour (sans lookahead), simule entrées/sorties avec stop/take-profit |
 | [metrics.py](metrics.py) | Calcul partagé des métriques de performance (rendement, CAGR, drawdown, Sharpe) |
 | [dca_benchmark.py](dca_benchmark.py) | Simulation d'un DCA mensuel classique (benchmark) |
@@ -106,6 +113,18 @@ il faut `MIN_CONFIRMATIONS` (2 par défaut) votes majoritaires dans le même sen
 **et** un ADX > `ADX_TREND_THRESHOLD` (marché en tendance). Sinon : CALME (ADX
 faible, aucun pattern) ou À_SURVEILLER (signaux insuffisants/contradictoires).
 
+**Affinage du libellé À_SURVEILLER** ([signal_display.py](signal_display.py)) :
+quand le signal tactique est À_SURVEILLER, on compare la distance au support
+le plus proche et à la résistance la plus proche pour afficher un libellé plus
+actionnable :
+- **RENFORCER** si un support est plus proche — zone d'opportunité pour
+  ajouter à une position existante.
+- **ALLEGER** si une résistance est plus proche — zone de prudence, envisager
+  de réduire l'exposition.
+
+Cette logique est partagée entre le rapport markdown et le rapport HTML (une
+seule source de vérité), pour éviter toute divergence entre les deux formats.
+
 ## Retournement de tendance de fond (préservation du capital)
 
 Indicateur distinct, volontairement lent (golden/death cross EMA50/EMA200
@@ -115,6 +134,23 @@ avec les vrais retournements macro (top BTC juin 2021, début bear market janvie
 2022, reprise février 2023). **Constat au 01/07/2026** : BTC, ETH et SOL sont en
 mode retournement baissier depuis novembre 2025, sans retournement haussier
 confirmé depuis.
+
+## Suivi de tendance serré (Supertrend)
+
+Troisième couche de suivi de tendance, entre le signal tactique quotidien
+(`signal_engine.py`) et le retournement de fond lent (`trend_regime.py`) :
+un [Supertrend](supertrend.py) (bande `hl2 ± multiplicateur × ATR` qui
+bascule haussier/baissier à la clôture) avec des paramètres resserrés
+(période 10, multiplicateur 2.0, contre 10/3.0 en réglage classique) pour un
+suivi plus réactif que le golden/death cross EMA50/EMA200. Sur BTC, ça donne
+~8 retournements sur les 6 derniers mois — beaucoup plus fréquent que
+`trend_regime.py` (1-2 par an), et volontairement plus sujet aux faux signaux
+en range en échange de cette réactivité.
+
+**Purement informatif** : affiché dans le rapport (direction, nombre de jours
+dans le sens actuel, ligne du jour), n'influence pas les signaux ACHAT/VENTE
+ni le stop-loss du `risk_manager` — c'est un complément de contexte, pas un
+déclencheur.
 
 ## Support / résistance
 
@@ -135,6 +171,34 @@ les clôtures règle le problème à la racine, plus simplement : une mèche
 isolée n'affecte jamais la clôture. Compromis accepté : on perd l'information
 des extrêmes intrabougie (une mèche qui teste un niveau sans y clôturer n'est
 plus comptée comme un test).
+
+## Loi de puissance BTC (contexte macro long terme)
+
+Indicateur contextuel distinct de la stratégie tactique : la [loi de puissance
+de Bitcoin](https://en.wikipedia.org/wiki/Bitcoin) (popularisée par Giovanni
+Santostasi) modélise le prix comme `Prix(t) ≈ A × t^n`, où `t` est le nombre de
+jours depuis le bloc genèse (03/01/2009). Ajustée en log-log sur l'historique
+complet, elle définit un corridor de valorisation (bande basse = creux de
+capitulation historiques, bande haute = sommets d'euphorie) dans lequel le prix
+oscille depuis l'origine de Bitcoin.
+
+**Source de données** ([power_law.py](power_law.py)) : l'API blockchain.info
+(`/charts/market-price`, gratuite, sans clé), qui couvre l'historique BTC
+depuis 2010 — contrairement à Binance (depuis 08/2017 seulement) ou CoinGecko,
+dont l'endpoint gratuit limite désormais l'historique à 365 jours sans clé API
+(changement de politique découvert en cours de développement). Cache local 24h
+dans `data/btc_full_history.csv`.
+
+**Validation** : l'exposant `n` ajusté sur nos données (~5,6) tombe dans la
+fourchette généralement citée (5,5-6), ce qui confirme la pertinence d'utiliser
+l'historique complet plutôt que les seules données Binance (un ajustement sur
+2017+ uniquement aurait donné un exposant beaucoup moins fiable, faute de
+dynamique de prix sur plusieurs ordres de grandeur).
+
+**Limites** : c'est un ajustement statistique a posteriori sur une seule série
+historique (~16 ans, 3-4 cycles complets) — aucune garantie que le modèle
+continue de tenir. C'est un indicateur de **contexte**, pas un signal de
+trading : il ne déclenche aucune position et n'est calculé que pour BTC.
 
 ## Résultats de backtest (10 ans, ou historique dispo si < 10 ans)
 
@@ -196,6 +260,10 @@ mode baissier depuis novembre 2025.
   la catégorie CoinGecko "stablecoins".
 - Scan complet sur 50 actifs ~7 minutes, borné par la latence réseau
   (séquentiel, non parallélisé).
+- La loi de puissance BTC est un ajustement statistique, pas un signal validé
+  scientifiquement — dépend d'une source de donnée externe (blockchain.info)
+  qui pourrait elle aussi changer de politique d'accès un jour (comme
+  CoinGecko l'a fait pour son historique gratuit en cours de développement).
 
 ## Commandes utiles
 
