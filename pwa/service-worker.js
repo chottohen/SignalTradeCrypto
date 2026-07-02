@@ -43,8 +43,10 @@ self.addEventListener("fetch", (event) => {
 
   // Reseau d'abord: sert toujours la version la plus fraiche du shell quand
   // le telephone est en ligne, le cache n'est qu'un repli hors-ligne.
+  // cache: "no-store" pour eviter que le cache HTTP du navigateur ne serve
+  // une reponse perimee sans revalidation (heuristique de fraicheur).
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-store" })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));

@@ -25,10 +25,11 @@ const WATCHLIST_CACHE_TTL_MS = 24 * 3600 * 1000;
 const VALID_TICKER = /^[A-Z0-9]+$/;
 const KRAKEN_TICKER_ALIASES = { XBT: "BTC" };
 
-// v3: ajout de la venue "kraken" - nouvelle version de cle pour forcer un
-// rafraichissement plutot que de garder un cache v2 qui ignorerait Kraken.
+// v4: ajout du champ "rank" (classement par capitalisation) sur chaque
+// entree - nouvelle version de cle pour forcer un rafraichissement plutot
+// que de garder un cache v3 qui n'aurait pas ce champ.
 function watchlistCacheKey(limit) {
-  return `signaltrade_watchlist_v3_${limit}`;
+  return `signaltrade_watchlist_v4_${limit}`;
 }
 
 async function fetchBinanceAssets() {
@@ -108,12 +109,13 @@ async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
     const ticker = coin.symbol.toUpperCase();
     if (!VALID_TICKER.test(ticker) || result.some((r) => r.symbol === ticker)) continue;
 
+    const rank = coin.market_cap_rank;
     if (binanceAssets.has(ticker)) {
-      result.push({ symbol: ticker, venue: "binance", pair: `${ticker}USDT`, quote: "USDT" });
+      result.push({ symbol: ticker, venue: "binance", pair: `${ticker}USDT`, quote: "USDT", rank });
     } else if (hyperliquidAssets.has(ticker)) {
-      result.push({ symbol: ticker, venue: "hyperliquid", pair: ticker, quote: "USDC" });
+      result.push({ symbol: ticker, venue: "hyperliquid", pair: ticker, quote: "USDC", rank });
     } else if (krakenAssets.has(ticker)) {
-      result.push({ symbol: ticker, venue: "kraken", pair: krakenAssets.get(ticker), quote: "USD" });
+      result.push({ symbol: ticker, venue: "kraken", pair: krakenAssets.get(ticker), quote: "USD", rank });
     } else {
       continue;
     }

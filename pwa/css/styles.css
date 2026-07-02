@@ -210,6 +210,11 @@ main {
   font-weight: 600;
   margin: 0;
 }
+.rank {
+  font-size: 12px;
+  font-weight: 400;
+  color: #5F5E5A;
+}
 .price {
   font-size: 13px;
   color: #5F5E5A;

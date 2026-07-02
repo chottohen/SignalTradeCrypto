@@ -103,7 +103,10 @@ function cardEl(entry) {
 
   const header = el("div", { class: "card-header" }, [
     el("div", {}, [
-      el("p", { class: "symbol", textContent: result.symbol }),
+      el("p", { class: "symbol" }, [
+        el("span", { class: "rank", textContent: `#${result.rank}` }),
+        ` ${result.symbol}`,
+      ]),
       el("p", { class: "price", textContent: `${formatPrice(result.close)} ${result.quote}` }),
     ]),
     badgeEl(displayLabel),
@@ -230,6 +233,7 @@ async function processSymbol(watchlistEntry) {
   let result = evaluate(watchlistEntry.symbol, candles);
   result.quote = watchlistEntry.quote;
   result.venue = watchlistEntry.venue;
+  result.rank = watchlistEntry.rank;
   result = applyRiskManagement(result);
 
   const data = computeIndicators(candles);
@@ -306,10 +310,10 @@ function showSuggestions(matches) {
     return;
   }
   matches.slice(0, 8).forEach((watchlistEntry) => {
-    const item = el("div", {
-      class: "suggestion-item",
-      textContent: watchlistEntry.symbol,
-    });
+    const item = el("div", { class: "suggestion-item" }, [
+      el("span", { class: "rank", textContent: `#${watchlistEntry.rank}` }),
+      ` ${watchlistEntry.symbol}`,
+    ]);
     item.addEventListener("click", () => selectSearchSymbol(watchlistEntry));
     box.appendChild(item);
   });
