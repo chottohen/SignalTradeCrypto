@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from chart_patterns import DoublePattern
 from formatting import format_price
 from signal_engine import SignalResult
 from signal_display import resolve_display_label
@@ -29,6 +30,7 @@ def build_report(
     levels_info: dict[str, dict[str, list[Level]]] | None = None,
     power_law_info: dict | None = None,
     supertrend_info: dict[str, SupertrendStatus] | None = None,
+    chart_pattern_info: dict[str, DoublePattern | None] | None = None,
 ) -> str:
     lines = [f"# Rapport quotidien - {date.today().isoformat()}", ""]
 
@@ -86,6 +88,9 @@ def build_report(
                 f"- Supertrend (suivi serre): {st.direction} depuis {st.days_in_direction} j, "
                 f"ligne a {format_price(st.line)}{flip_note}"
             )
+        pattern: DoublePattern | None = chart_pattern_info.get(r.symbol) if chart_pattern_info else None
+        if pattern:
+            lines.append(f"- Figure chartiste: {pattern.rationale}")
         lines.append(f"- Rationale: {r.rationale}")
         if display_label == "RENFORCER":
             lines.append(

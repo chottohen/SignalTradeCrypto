@@ -36,3 +36,10 @@ def summarize_dca(symbol: str, df: pd.DataFrame, capital: float = config.CAPITAL
         "strategie": "DCA_mensuel",
         **performance_metrics(equity, base_capital=capital),
     }
+
+
+def run_buy_and_hold(df: pd.DataFrame, capital: float = config.CAPITAL_TOTAL) -> pd.Series:
+    """Achat unique de tout le capital au premier jour de `df`, conserve jusqu'a
+    la fin sans aucune vente ni rebalancement."""
+    units = capital / df["close"].iloc[0]
+    return units * df["close"]

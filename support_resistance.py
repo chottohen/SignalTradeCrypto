@@ -17,7 +17,7 @@ class Level:
     horizon: str  # "moyen_terme" | "long_terme"
 
 
-def _swing_points(df: pd.DataFrame, window: int) -> tuple[pd.Series, pd.Series]:
+def swing_points(df: pd.DataFrame, window: int) -> tuple[pd.Series, pd.Series]:
     """Points pivots calcules sur les clotures (pas les meches high/low): un plus
     haut/bas local sur une fenetre centree de +/- `window` bougies. Les `window`
     derniers jours ne peuvent pas encore etre confirmes (pas assez de recul) et
@@ -60,7 +60,7 @@ def _cluster(points: pd.Series, kind: str, horizon: str, tolerance_pct: float) -
 
 
 def find_levels(df: pd.DataFrame, window: int, horizon: str, tolerance_pct: float = config.SR_TOLERANCE_PCT) -> list[Level]:
-    swing_highs, swing_lows = _swing_points(df, window)
+    swing_highs, swing_lows = swing_points(df, window)
     resistances = _cluster(swing_highs, "resistance", horizon, tolerance_pct)
     supports = _cluster(swing_lows, "support", horizon, tolerance_pct)
     return sorted(resistances + supports, key=lambda lvl: lvl.price)

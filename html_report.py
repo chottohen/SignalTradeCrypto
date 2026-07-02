@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from chart_patterns import DoublePattern
 from formatting import format_price
 from signal_engine import SignalResult
 from signal_display import nearest_pair, resolve_display_label
@@ -113,12 +114,20 @@ def _supertrend_html(status: SupertrendStatus | None) -> str:
     )
 
 
+def _chart_pattern_html(pattern: DoublePattern | None) -> str:
+    if not pattern:
+        return ""
+    color = RED if pattern.kind == "double_top" else GREEN
+    return f'<p class="supertrend-tag" style="color:{color};">{pattern.rationale}</p>'
+
+
 def _card_html(
     r: SignalResult,
     trend_entry: dict[str, object] | None,
     levels: dict[str, list[Level]] | None,
     variations: dict[str, float | None] | None,
     supertrend: SupertrendStatus | None = None,
+    chart_pattern: DoublePattern | None = None,
 ) -> str:
     display_label, watch_level = resolve_display_label(r.signal, r.close, levels)
     nearest_support, nearest_resistance = nearest_pair(levels, r.close) if levels else (None, None)
@@ -163,6 +172,7 @@ def _card_html(
     </div>
     <p class="rationale">{r.rationale}</p>
     {_supertrend_html(supertrend)}
+    {_chart_pattern_html(chart_pattern)}
     {extra_note}
     {alert_html}
     {variations_html}
@@ -210,11 +220,13 @@ def build_html_report(
     variations_info: dict[str, dict[str, float | None]] | None = None,
     power_law_info: dict | None = None,
     supertrend_info: dict[str, SupertrendStatus] | None = None,
+    chart_pattern_info: dict[str, DoublePattern | None] | None = None,
 ) -> str:
     trend_info = trend_info or {}
     levels_info = levels_info or {}
     variations_info = variations_info or {}
     supertrend_info = supertrend_info or {}
+    chart_pattern_info = chart_pattern_info or {}
 
     dom = fundamentals.get("btc_dominance")
     fg = fundamentals.get("fear_greed")
@@ -246,6 +258,7 @@ def build_html_report(
             levels_info.get(r.symbol),
             variations_info.get(r.symbol),
             supertrend_info.get(r.symbol),
+            chart_pattern_info.get(r.symbol),
         )
         for r in results
     )

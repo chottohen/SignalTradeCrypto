@@ -55,6 +55,7 @@ actif, sans dépendance externe) sur les 50 actifs de [universe.py](universe.py)
 | [fundamental_filter.py](fundamental_filter.py) | Contexte macro : dominance BTC (CoinGecko), Fear & Greed Index (alternative.me) |
 | [trend_regime.py](trend_regime.py) | Alerte de **retournement de tendance de fond** (golden/death cross EMA50/EMA200 confirmé par l'ADX) — préservation du capital |
 | [support_resistance.py](support_resistance.py) | Niveaux de support/résistance moyen terme et long terme (points pivots regroupés en zones) |
+| [chart_patterns.py](chart_patterns.py) | Détection de doubles tops/bottoms (figure chartiste), confirmés par la cassure de la ligne de cou |
 | [power_law.py](power_law.py) | Loi de puissance BTC : position du prix dans le corridor de valorisation long terme |
 | [variations.py](variations.py) | Variations de prix veille / 7 jours / 30 jours |
 | [formatting.py](formatting.py) | Formatage partagé des prix (précision adaptative pour les tokens à très faible valeur) |
@@ -69,6 +70,14 @@ actif, sans dépendance externe) sur les 50 actifs de [universe.py](universe.py)
 | [compare_strategies.py](compare_strategies.py) | CLI pour comparer stratégie signal vs DCA sur une période donnée |
 | [optimizer.py](optimizer.py) | Grid search sur les paramètres de `config` pour optimiser le Sharpe |
 | [trend_monitor.py](trend_monitor.py) | CLI pour lister l'historique des alertes de retournement de tendance de fond |
+| [dca_benchmark.py](dca_benchmark.py) | (aussi) `run_buy_and_hold` : achat unique en début de période, benchmark de reference |
+| [aligned_strategy.py](aligned_strategy.py) | Stratégie 100%/0% : investi seulement quand signal tactique et Supertrend serré sont alignés |
+| [aligned_backtest.py](aligned_backtest.py) | CLI pour comparer la stratégie alignée à un buy & hold |
+| [swing_strategy.py](swing_strategy.py) | Stratégie swing multi-semaines : entrée alignée + sortie sur Supertrend large (14, 3.0) |
+| [swing_backtest.py](swing_backtest.py) | CLI pour comparer la stratégie swing à un buy & hold |
+| [support_zones.py](support_zones.py) | Détection de zones de support hebdomadaires (creux multi-retests + anciens ATH repris) |
+| [zone_dca.py](zone_dca.py) | DCA dynamique : déploie le capital par tranches sur les zones d'intérêt plutôt qu'au calendrier |
+| [zone_dca_backtest.py](zone_dca_backtest.py) | CLI pour comparer le DCA par zones au DCA classique et au buy & hold |
 
 ## Watchlist (top 50 hors stablecoins)
 
@@ -172,6 +181,28 @@ isolée n'affecte jamais la clôture. Compromis accepté : on perd l'information
 des extrêmes intrabougie (une mèche qui teste un niveau sans y clôturer n'est
 plus comptée comme un test).
 
+## Figures chartistes : double top / double bottom
+
+Complément à la détection de retournement, basé sur la même fonction de
+détection de pivots que `support_resistance.py` (rendue publique :
+`swing_points`). Cherche deux pivots consécutifs (deux sommets pour un double
+top, deux creux pour un double bottom) à moins de 3% l'un de l'autre, séparés
+par un creux/pic intermédiaire d'au moins 3% (la "ligne de cou") — sinon ce
+n'est qu'un seul sommet large, pas deux pics distincts.
+
+**Confirmation, pas juste détection** : un double top/bottom n'est retenu
+comme signal que si le prix a effectivement cassé la ligne de cou *après* le
+second pivot — avant ça, ce n'est qu'un candidat "en formation", pas encore
+actionnable. Validé sur l'historique BTC : les patterns détectés
+correspondent à des sommets réels et connus (double top de nov. 2021 à
+~66-67k juste avant le top historique du cycle, mars-avril 2024 à ~71-73k,
+mai-août 2025 à ~110-123k).
+
+**Purement informatif** dans le rapport quotidien (`chart_pattern_info`,
+alerte affichée seulement si confirmé dans les 5 derniers jours) — comme le
+Supertrend et la tendance de fond, ça ne déclenche pas de position, ça donne
+un contexte supplémentaire de retournement potentiel.
+
 ## Loi de puissance BTC (contexte macro long terme)
 
 Indicateur contextuel distinct de la stratégie tactique : la [loi de puissance
@@ -239,6 +270,103 @@ surachat, ADX=32). WLD/USDT a aussi déclenché sa propre alerte individuelle de
 retournement de tendance de fond, indépendamment du groupe BTC/ETH/SOL/... en
 mode baissier depuis novembre 2025.
 
+## Explorations stratégiques (BTC)
+
+Trois variantes testées en réponse à "le signal seul rapporte peu par trade,
+peut-on faire mieux ?". Toutes comparées à un vrai buy & hold (achat unique en
+début de période, `dca_benchmark.run_buy_and_hold`) plutôt qu'au DCA mensuel
+utilisé plus haut.
+
+### Stratégie alignée (`aligned_strategy.py`)
+
+Investi à 100% seulement quand le signal tactique (confluence haussière >
+baissière, sans le filtre ADX) **et** le Supertrend serré sont d'accord ;
+cash sinon. Sur BTC :
+
+| Période | Rendement | Drawdown max | % temps investi | Gain moyen/trade |
+|---|---|---|---|---|
+| 4 ans | +14.4% (vs +193% hold) | -31.4% (vs -53.0%) | 26.3% | +0.19% |
+| 2022 (krach) | **+10.3%** (vs -67.4%) | **-1.0%** (vs -68.9%) | 2.4% | +1.24% |
+| 12 derniers mois | **-0.9%** (vs -43.2%) | **-12.0%** (vs -53.0%) | 13.8% | -0.01% |
+
+Protège très efficacement le capital en marché baissier (quasi aucune perte
+en 2022 et sur la dernière année, toutes deux des périodes de repli), mais
+l'espérance par trade est quasi nulle (+0.19% sur 4 ans, -0.01% sur 12 mois) :
+c'est un filtre défensif, pas un générateur de rendement. Signature classique
+du trend-following : taux de réussite ~32%, médiane négative, quelques gros
+gagnants (+23.75% max) compensant beaucoup de petites pertes.
+
+### Stratégie swing (`swing_strategy.py`)
+
+Objectif : des trades de plusieurs jours/semaines avec un potentiel de gain
+>10%, en desserrant le suivi pour éviter les fausses sorties. Entrée
+uniquement sur signal ACHAT/VENTE complet (confluence + ADX) **quand** le
+Supertrend large (14, 3.0, réglage classique) est déjà aligné ; sortie
+unique sur le retournement de ce même Supertrend large (pas de take-profit
+fixe, pas de stop dur séparé — les deux ont été essayés et ont dégradé le
+résultat, voir ci-dessous).
+
+| Période | Trades | Durée médiane | Meilleur trade | Rendement stratégie | Buy & hold |
+|---|---|---|---|---|---|
+| 4 ans | 29 | 27 j | +45.6% | +2.0% | +196.8% |
+| 2022 | 6 | 31 j | +37.4% | +0.7% | -67.4% |
+| 12 derniers mois | 6 | 21 j | +15.3% | +1.6% | -43.9% |
+
+**Deux erreurs de conception corrigées en cours de route** (gardées en
+commentaire dans le code, utile pour ne pas les refaire) :
+1. Sans exiger l'alignement du Supertrend large **dès l'entrée**, un signal
+   tactique plus rapide déclenchait une sortie dès le lendemain (durée
+   médiane tombée à 1 jour au lieu de plusieurs semaines).
+2. Ajouter un stop dur serré (ATR×1.5, calibré pour le signal tactique court
+   terme) en plus du Supertrend large a **dégradé** le résultat (taux de
+   réussite 32% → 22%, rendement négatif sur 2 périodes sur 3) : un stop
+   court terme coupe les trades avant que la tendance multi-semaines ait le
+   temps de se confirmer. Un stop doit être calibré sur l'horizon de la
+   stratégie, pas réutilisé tel quel d'une autre.
+
+Objectif de gain par trade atteint (gagnants jusqu'à +45%, durées de 3-4
+semaines), mais peu de trades (6-29 selon la période) et taux de réussite
+~32% : les perdants restent presque aussi amples que les gagnants, faute de
+stop rapproché viable pour ce timeframe.
+
+### DCA par zones d'intérêt (`support_zones.py`, `zone_dca.py`)
+
+Hypothèse testée : plutôt que d'investir au calendrier (DCA classique), ne
+déployer le capital (divisé en tranches égales) que lorsque le prix
+hebdomadaire entre dans une **zone** de support déjà validée par plusieurs
+retests historiques (±3%, ≥2 creux confirmés), pour obtenir un meilleur prix
+de revient moyen. Zones recalculées progressivement semaine par semaine, sans
+lookahead : un support n'est "connu" qu'une fois réellement testé plusieurs
+fois dans le passé.
+
+Trois variantes de zones testées sur BTC (8 ans, capital 10 000, 97 tranches) :
+
+| Variante | Achats | Prix de revient moyen | Fréquence |
+|---|---|---|---|
+| Creux historiques uniquement | 1/97 | 19 570 $ | quasi jamais |
+| + résistances locales cassées (principe de polarité) | 9/97 | 29 907 $ | rare |
+| + anciens ATH de cycle repris (repli ≥20% exigé avant reprise) | 36/97 | 29 263 $ | occasionnelle |
+| **DCA classique (calendrier)** | 97/97 | **16 723 $** | — |
+
+**Conclusion négative mais instructive** : aucune variante ne bat le DCA
+classique sur le prix de revient. Deux problèmes distincts identifiés :
+1. **Les creux historiques sont rarement retestés** : BTC a tendance à faire
+   des creux différents à chaque cycle plutôt que de revenir exactement sur
+   d'anciens supports à ±3% — d'où la fréquence quasi nulle de la variante la
+   plus stricte (99% du capital jamais déployé sur 8 ans).
+2. **Résistances cassées et anciens ATH, une fois repris, sont structurellement
+   chers** : par construction, un ancien plus-haut (local ou de cycle) est
+   repris près du haut de la fourchette récente, pas en bas. Solidité
+   technique du support et prix avantageux sont deux qualités indépendantes —
+   ajouter ces zones améliore la fréquence de déploiement mais dégrade
+   systématiquement le prix payé.
+
+Un premier essai de détection des anciens ATH avait un bug révélateur : sans
+exiger un repli minimum (`ZONE_ATH_MIN_DRAWDOWN_PCT = 0.20`) avant la reprise,
+chaque nouveau plus-haut hebdomadaire pendant une hausse continue (2021,
+2024-2025) comptait comme un "ancien ATH" dès qu'il était dépassé la semaine
+suivante — 23 faux signaux au lieu de 3 vrais sommets de cycle.
+
 ## Limites connues
 
 - Patterns de chandeliers = règles géométriques simplifiées, sans filtre de
@@ -274,4 +402,7 @@ python compare_strategies.py 10              # signal vs DCA, 10 dernieres annee
 python compare_strategies.py 2022-01-01 2022-12-31   # sur une periode precise
 python optimizer.py 10                       # grid search des parametres
 python trend_monitor.py 10                   # historique des alertes de tendance de fond
+python aligned_backtest.py BTC/USDT 4        # strategie alignee (tactique+Supertrend) vs buy & hold
+python swing_backtest.py BTC/USDT 4          # strategie swing (sortie Supertrend large) vs buy & hold
+python zone_dca_backtest.py BTC/USDT 8       # DCA par zones d'interet vs DCA classique vs buy & hold
 ```

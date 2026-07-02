@@ -1,6 +1,7 @@
 import pandas as pd
 
 import config
+from chart_patterns import latest_confirmed_pattern
 from data_fetcher import fetch_ohlcv
 from fundamental_filter import fundamental_context
 from historical_data import fetch_history
@@ -32,6 +33,7 @@ def run_daily_scan() -> tuple[str, str]:
     levels_info = {}
     variations_info = {}
     supertrend_info = {}
+    chart_pattern_info = {}
     for symbol in watchlist:
         try:
             df = fetch_ohlcv(symbol, config.TIMEFRAME, config.CANDLES_HISTORY)
@@ -56,14 +58,24 @@ def run_daily_scan() -> tuple[str, str]:
             df_medium = df_long[df_long.index >= now - pd.Timedelta(days=config.SR_MEDIUM_TERM_LOOKBACK_DAYS)]
             levels_info[symbol] = analyze_symbol(df_medium, df_long)
             variations_info[symbol] = compute_variations(df_long)
+            chart_pattern_info[symbol] = latest_confirmed_pattern(df_long)
         except Exception as exc:
             print(f"{symbol}: erreur ignoree ({exc})")
             continue
 
     results = enforce_global_exposure(results)
-    markdown = build_report(results, fundamentals, trend_info, levels_info, power_law_info, supertrend_info)
+    markdown = build_report(
+        results, fundamentals, trend_info, levels_info, power_law_info, supertrend_info, chart_pattern_info
+    )
     html = build_html_report(
-        results, fundamentals, trend_info, levels_info, variations_info, power_law_info, supertrend_info
+        results,
+        fundamentals,
+        trend_info,
+        levels_info,
+        variations_info,
+        power_law_info,
+        supertrend_info,
+        chart_pattern_info,
     )
     return markdown, html
 
