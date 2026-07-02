@@ -65,7 +65,14 @@ def run_daily_scan() -> tuple[str, str]:
 
     results = enforce_global_exposure(results)
     markdown = build_report(
-        results, fundamentals, trend_info, levels_info, power_law_info, supertrend_info, chart_pattern_info
+        results,
+        fundamentals,
+        trend_info,
+        levels_info,
+        power_law_info,
+        supertrend_info,
+        chart_pattern_info,
+        variations_info,
     )
     html = build_html_report(
         results,

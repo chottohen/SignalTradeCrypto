@@ -11,6 +11,16 @@ from supertrend import SupertrendStatus
 from trend_regime import TrendAlert
 
 
+def _format_variations(variations: dict[str, float | None]) -> str:
+    labels = [("d1", "Veille"), ("d7", "7 jours"), ("d30", "30 jours")]
+    parts = []
+    for key, label in labels:
+        value = variations.get(key)
+        value_str = f"{value:+.1f}%" if value is not None else "n/d"
+        parts.append(f"{label} {value_str}")
+    return " | ".join(parts)
+
+
 def _format_levels(levels: list[Level], current_price: float, highlight: Level | None = None) -> list[str]:
     lines = []
     for lvl in sorted(levels, key=lambda l: l.price):
@@ -31,6 +41,7 @@ def build_report(
     power_law_info: dict | None = None,
     supertrend_info: dict[str, SupertrendStatus] | None = None,
     chart_pattern_info: dict[str, DoublePattern | None] | None = None,
+    variations_info: dict[str, dict[str, float | None]] | None = None,
 ) -> str:
     lines = [f"# Rapport quotidien - {date.today().isoformat()}", ""]
 
@@ -80,6 +91,9 @@ def build_report(
 
         lines.append(f"### {r.symbol} — **{display_label}**")
         lines.append(f"- Prix: {format_price(r.close)}")
+        variations = variations_info.get(r.symbol) if variations_info else None
+        if variations:
+            lines.append(f"- Variations: {_format_variations(variations)}")
         lines.append(f"- ADX: {r.adx:.1f} | Pattern detecte: {r.pattern or 'aucun'}")
         st: SupertrendStatus | None = supertrend_info.get(r.symbol) if supertrend_info else None
         if st:
