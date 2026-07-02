@@ -103,7 +103,7 @@ function cardEl(entry) {
 
   const header = el("div", { class: "card-header" }, [
     el("div", {}, [
-      el("p", { class: "symbol", textContent: `${result.symbol}/${result.quote}` }),
+      el("p", { class: "symbol", textContent: result.symbol }),
       el("p", { class: "price", textContent: `${formatPrice(result.close)} ${result.quote}` }),
     ]),
     badgeEl(displayLabel),
@@ -308,7 +308,7 @@ function showSuggestions(matches) {
   matches.slice(0, 8).forEach((watchlistEntry) => {
     const item = el("div", {
       class: "suggestion-item",
-      textContent: `${watchlistEntry.symbol}/${watchlistEntry.quote}`,
+      textContent: watchlistEntry.symbol,
     });
     item.addEventListener("click", () => selectSearchSymbol(watchlistEntry));
     box.appendChild(item);
@@ -321,7 +321,7 @@ function hideSuggestions() {
 }
 
 async function selectSearchSymbol(watchlistEntry) {
-  const display = `${watchlistEntry.symbol}/${watchlistEntry.quote}`;
+  const display = watchlistEntry.symbol;
   document.getElementById("search-input").value = display;
   hideSuggestions();
   document.getElementById("search-clear").style.display = "block";
