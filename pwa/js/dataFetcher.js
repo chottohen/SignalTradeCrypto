@@ -1,25 +1,34 @@
 // Port de universe.py + data_fetcher.py + fundamental_filter.py
 // Toute la pile tourne dans le navigateur: appels directs a Binance,
-// CoinGecko, alternative.me et Hyperliquid (CORS ouvert sur les quatre).
+// CoinGecko, alternative.me, Hyperliquid et Kraken (CORS ouvert partout).
 //
-// Deux venues possibles par actif:
-// - "binance": priorite, paire XXXUSDT, klines classiques.
-// - "hyperliquid": repli pour les actifs top 100 par capitalisation absents
-//   de Binance (ex: HYPE) - candleSnapshot journalier avec volume, meme
-//   qualite de donnee que Binance (contrairement a l'endpoint OHLC gratuit
-//   de CoinGecko, limite a des bougies de 4 jours sans volume au-dela de
-//   30 jours d'historique). Le "top 100" reste toujours pilote par le
-//   classement CoinGecko: Hyperliquid ne fait que fournir le prix pour les
-//   actifs deja retenus, il n'ajoute jamais un actif qui n'y figurerait pas.
+// Trois venues possibles par actif, dans cet ordre de priorite:
+// - "binance": paire XXXUSDT, klines classiques.
+// - "hyperliquid": repli pour les actifs top 100 absents de Binance (ex:
+//   HYPE) - candleSnapshot journalier avec volume, qualite equivalente a
+//   Binance (contrairement a l'endpoint OHLC gratuit de CoinGecko, limite a
+//   des bougies de 4 jours sans volume au-dela de 30 jours d'historique).
+// - "kraken": second repli pour ce que ni Binance ni Hyperliquid ne liste
+//   (ex: XMR, delisté de Binance pour raisons reglementaires; MNT, KAS,
+//   AERO...). Couverture testee: Binance+Hyperliquid seuls = 66/100 du top
+//   100 CoinGecko strict; +Kraken = 84/100. Les 16 restants sont presque
+//   tous des fonds tokenises (BUIDL, USYC, JTRSY...) sans vraies bougies de
+//   prix a analyser, ou des tokens propres a un exchange (LEO, KCS, GT...)
+//   qui demanderaient une integration dediee pour un seul actif chacun -
+//   retour sur investissement juge trop faible pour aller plus loin.
+//
+// Le "top 100" reste entierement pilote par le classement CoinGecko: les
+// venues de prix ne font que fournir des donnees pour un actif deja
+// retenu, elles n'en ajoutent jamais un qui n'y figurerait pas.
 
 const WATCHLIST_CACHE_TTL_MS = 24 * 3600 * 1000;
 const VALID_TICKER = /^[A-Z0-9]+$/;
+const KRAKEN_TICKER_ALIASES = { XBT: "BTC" };
 
-// v2: le cache contient desormais des objets {symbol, venue, pair, quote}
-// au lieu de simples chaines - une nouvelle version de cle evite de
-// reinterpreter un ancien cache incompatible.
+// v3: ajout de la venue "kraken" - nouvelle version de cle pour forcer un
+// rafraichissement plutot que de garder un cache v2 qui ignorerait Kraken.
 function watchlistCacheKey(limit) {
-  return `signaltrade_watchlist_v2_${limit}`;
+  return `signaltrade_watchlist_v3_${limit}`;
 }
 
 async function fetchBinanceAssets() {
@@ -44,6 +53,38 @@ async function fetchHyperliquidAssets() {
   }
 }
 
+// Renvoie une Map ticker -> nom de paire Kraken (ex: "BTC" -> "XBTUSD").
+// Necessite de croiser /Assets (code interne -> altname propre, ex:
+// XXBT -> XBT) et /AssetPairs (quelle paire USD existe pour quel code) car
+// Kraken utilise des codes internes prefixes X/Z herites de l'ISO 4217 pour
+// les actifs historiques (XXBT, XETH...), differents du ticker usuel.
+async function fetchKrakenAssets() {
+  try {
+    const [assetsResp, pairsResp] = await Promise.all([
+      fetch("https://api.kraken.com/0/public/Assets"),
+      fetch("https://api.kraken.com/0/public/AssetPairs"),
+    ]);
+    const assetsData = await assetsResp.json();
+    const pairsData = await pairsResp.json();
+
+    const codeToTicker = {};
+    for (const [code, info] of Object.entries(assetsData.result)) {
+      const alt = (info.altname || code).toUpperCase();
+      codeToTicker[code] = KRAKEN_TICKER_ALIASES[alt] || alt;
+    }
+
+    const map = new Map();
+    for (const pairInfo of Object.values(pairsData.result)) {
+      if (pairInfo.quote !== "ZUSD") continue;
+      const ticker = codeToTicker[pairInfo.base];
+      if (ticker && !map.has(ticker)) map.set(ticker, pairInfo.altname);
+    }
+    return map;
+  } catch (e) {
+    return new Map();
+  }
+}
+
 async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
   const stableResp = await fetch(
     "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=stablecoins&per_page=250"
@@ -56,9 +97,10 @@ async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
   const markets = await marketsResp.json();
   const candidates = markets.filter((c) => !stableIds.has(c.id));
 
-  const [binanceAssets, hyperliquidAssets] = await Promise.all([
+  const [binanceAssets, hyperliquidAssets, krakenAssets] = await Promise.all([
     fetchBinanceAssets(),
     fetchHyperliquidAssets(),
+    fetchKrakenAssets(),
   ]);
 
   const result = [];
@@ -70,6 +112,8 @@ async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
       result.push({ symbol: ticker, venue: "binance", pair: `${ticker}USDT`, quote: "USDT" });
     } else if (hyperliquidAssets.has(ticker)) {
       result.push({ symbol: ticker, venue: "hyperliquid", pair: ticker, quote: "USDC" });
+    } else if (krakenAssets.has(ticker)) {
+      result.push({ symbol: ticker, venue: "kraken", pair: krakenAssets.get(ticker), quote: "USD" });
     } else {
       continue;
     }
@@ -136,8 +180,28 @@ async function fetchHyperliquidKlines(coin, interval = "1d", limit = CONFIG.cand
   }));
 }
 
+async function fetchKrakenKlines(pairAltname, limit = CONFIG.candlesHistory) {
+  const resp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pairAltname}&interval=1440`);
+  if (!resp.ok) throw new Error(`Kraken OHLC ${pairAltname}: HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.error && data.error.length) throw new Error(`Kraken OHLC ${pairAltname}: ${data.error.join(", ")}`);
+
+  const resultKey = Object.keys(data.result).find((k) => k !== "last");
+  const raw = data.result[resultKey] || [];
+  const candles = raw.map((k) => ({
+    time: k[0] * 1000, // Kraken renvoie des secondes, pas des ms
+    open: parseFloat(k[1]),
+    high: parseFloat(k[2]),
+    low: parseFloat(k[3]),
+    close: parseFloat(k[4]),
+    volume: parseFloat(k[6]),
+  }));
+  return candles.slice(-limit);
+}
+
 async function fetchCandles(entry) {
   if (entry.venue === "hyperliquid") return fetchHyperliquidKlines(entry.pair);
+  if (entry.venue === "kraken") return fetchKrakenKlines(entry.pair);
   return fetchBinanceKlines(entry.pair);
 }
 
