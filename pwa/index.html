@@ -16,6 +16,11 @@
     <h1>SignalTrade</h1>
     <button id="refresh-btn">Actualiser</button>
   </div>
+  <div class="search-wrap">
+    <input type="text" id="search-input" placeholder="Rechercher une paire (top 100)…" autocomplete="off" autocapitalize="characters">
+    <button id="search-clear" aria-label="Effacer la recherche" style="display:none;">×</button>
+    <div id="search-suggestions" class="search-suggestions" style="display:none;"></div>
+  </div>
   <p id="status">Chargement…</p>
   <div id="macro-row" class="macro-row"></div>
 </header>

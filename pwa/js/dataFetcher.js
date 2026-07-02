@@ -2,9 +2,14 @@
 // Toute la pile tourne dans le navigateur: appels directs a Binance,
 // CoinGecko et alternative.me (CORS ouvert sur les trois).
 
-const WATCHLIST_CACHE_KEY = "signaltrade_watchlist_v1";
 const WATCHLIST_CACHE_TTL_MS = 24 * 3600 * 1000;
 const VALID_TICKER = /^[A-Z0-9]+$/;
+
+// Une entree de cache par limite (10 pour les fiches par defaut, 100 pour
+// l'univers de recherche) - une seule cle partagee ecraserait l'autre.
+function watchlistCacheKey(limit) {
+  return `signaltrade_watchlist_v1_${limit}`;
+}
 
 async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
   const stableResp = await fetch(
@@ -38,17 +43,18 @@ async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
 }
 
 async function getWatchlist(limit = CONFIG.watchlistSize) {
-  const cached = localStorage.getItem(WATCHLIST_CACHE_KEY);
+  const key = watchlistCacheKey(limit);
+  const cached = localStorage.getItem(key);
   if (cached) {
     const parsed = JSON.parse(cached);
-    if (parsed.limit === limit && Date.now() - parsed.fetchedAt < WATCHLIST_CACHE_TTL_MS) {
+    if (Date.now() - parsed.fetchedAt < WATCHLIST_CACHE_TTL_MS) {
       return parsed.symbols;
     }
   }
 
   try {
     const symbols = await fetchTopSymbols(limit);
-    localStorage.setItem(WATCHLIST_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), limit, symbols }));
+    localStorage.setItem(key, JSON.stringify({ fetchedAt: Date.now(), symbols }));
     return symbols;
   } catch (e) {
     if (cached) return JSON.parse(cached).symbols;

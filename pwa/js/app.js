@@ -211,6 +211,18 @@ function setStatus(text) {
   document.getElementById("status").textContent = text;
 }
 
+function renderCards(entries) {
+  const container = document.getElementById("cards");
+  container.innerHTML = "";
+  entries.forEach((entry) => container.appendChild(cardEl(entry)));
+}
+
+// Fiches par defaut (top 10) gardees en memoire pour un retour instantane
+// quand la recherche est effacee, sans re-telecharger les donnees.
+let defaultEntries = [];
+let searchUniverseCache = null;
+let searchActive = false;
+
 async function processSymbol(symbol) {
   const candles = await fetchKlines(symbol);
   if (candles.length <= CONFIG.warmupPeriod) return null;
@@ -229,6 +241,7 @@ async function processSymbol(symbol) {
 
 async function loadApp() {
   setStatus("Chargement…");
+  defaultEntries = [];
   const cardsContainer = document.getElementById("cards");
   cardsContainer.innerHTML = "";
 
@@ -260,19 +273,111 @@ async function loadApp() {
         btcPowerLawRendered = true;
       }
 
-      cardsContainer.appendChild(cardEl(entry));
+      defaultEntries.push(entry);
+      if (!searchActive) cardsContainer.appendChild(cardEl(entry));
     } catch (e) {
       console.error(symbol, e);
     }
     done++;
   }
 
+  if (!searchActive) {
+    setStatus(`Mis à jour à ${new Date().toLocaleTimeString("fr-FR")}`);
+  }
+}
+
+// --- Recherche (top 100, une seule fiche affichee a la selection) ---
+
+async function getSearchUniverse() {
+  if (!searchUniverseCache) {
+    searchUniverseCache = await getWatchlist(100);
+  }
+  return searchUniverseCache;
+}
+
+function showSuggestions(matches) {
+  const box = document.getElementById("search-suggestions");
+  box.innerHTML = "";
+  if (matches.length === 0) {
+    box.appendChild(el("div", { class: "suggestion-empty", textContent: "Aucun résultat dans le top 100." }));
+    box.style.display = "block";
+    return;
+  }
+  matches.slice(0, 8).forEach((symbol) => {
+    const item = el("div", { class: "suggestion-item", textContent: symbol.replace("USDT", "/USDT") });
+    item.addEventListener("click", () => selectSearchSymbol(symbol));
+    box.appendChild(item);
+  });
+  box.style.display = "block";
+}
+
+function hideSuggestions() {
+  document.getElementById("search-suggestions").style.display = "none";
+}
+
+async function selectSearchSymbol(symbol) {
+  document.getElementById("search-input").value = symbol.replace("USDT", "/USDT");
+  hideSuggestions();
+  document.getElementById("search-clear").style.display = "block";
+  searchActive = true;
+
+  setStatus(`Chargement de ${symbol.replace("USDT", "/USDT")}…`);
+  document.getElementById("cards").innerHTML = "";
+  try {
+    const entry = await processSymbol(symbol);
+    if (entry) {
+      renderCards([entry]);
+      setStatus(`Résultat pour ${symbol.replace("USDT", "/USDT")}`);
+    } else {
+      setStatus(`Historique insuffisant pour ${symbol.replace("USDT", "/USDT")}`);
+    }
+  } catch (e) {
+    setStatus(`Erreur: ${e.message}`);
+  }
+}
+
+function clearSearch() {
+  document.getElementById("search-input").value = "";
+  document.getElementById("search-clear").style.display = "none";
+  hideSuggestions();
+  searchActive = false;
+  renderCards(defaultEntries);
   setStatus(`Mis à jour à ${new Date().toLocaleTimeString("fr-FR")}`);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
   document.getElementById("refresh-btn").addEventListener("click", loadApp);
+
+  const searchInput = document.getElementById("search-input");
+  const searchClear = document.getElementById("search-clear");
+
+  searchInput.addEventListener("input", async (e) => {
+    const query = e.target.value.trim().toUpperCase();
+    searchClear.style.display = query ? "block" : "none";
+
+    if (!query) {
+      clearSearch();
+      return;
+    }
+
+    const universe = await getSearchUniverse();
+    const matches = universe.filter((s) => s.replace("USDT", "").includes(query));
+    showSuggestions(matches);
+  });
+
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const box = document.getElementById("search-suggestions");
+    const first = box.querySelector(".suggestion-item");
+    if (first) first.click();
+  });
+
+  searchClear.addEventListener("click", clearSearch);
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".search-wrap")) hideSuggestions();
+  });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
