@@ -103,8 +103,8 @@ function cardEl(entry) {
 
   const header = el("div", { class: "card-header" }, [
     el("div", {}, [
-      el("p", { class: "symbol", textContent: result.symbol.replace("USDT", "/USDT") }),
-      el("p", { class: "price", textContent: `${formatPrice(result.close)} USDT` }),
+      el("p", { class: "symbol", textContent: `${result.symbol}/${result.quote}` }),
+      el("p", { class: "price", textContent: `${formatPrice(result.close)} ${result.quote}` }),
     ]),
     badgeEl(displayLabel),
   ]);
@@ -160,7 +160,7 @@ function cardEl(entry) {
   return el("div", { class: "card" }, children);
 }
 
-function powerLawEl(info) {
+function powerLawEl(info, quote = "USDT") {
   if (!info) return null;
   const pct = info.positionPct;
   let color;
@@ -181,7 +181,7 @@ function powerLawEl(info) {
       el("span", { textContent: `ligne centrale : ${formatPrice(info.centralPrice)}` }),
       el("span", { textContent: formatPrice(info.upperBand) }),
     ]),
-    el("p", { class: "powerlaw-current", textContent: `Prix BTC actuel : ${formatPrice(info.currentPrice)} USDT` }),
+    el("p", { class: "powerlaw-current", textContent: `Prix BTC actuel : ${formatPrice(info.currentPrice)} ${quote}` }),
   ]);
 }
 
@@ -223,11 +223,13 @@ let defaultEntries = [];
 let searchUniverseCache = null;
 let searchActive = false;
 
-async function processSymbol(symbol) {
-  const candles = await fetchKlines(symbol);
+async function processSymbol(watchlistEntry) {
+  const candles = await fetchCandles(watchlistEntry);
   if (candles.length <= CONFIG.warmupPeriod) return null;
 
-  let result = evaluate(symbol, candles);
+  let result = evaluate(watchlistEntry.symbol, candles);
+  result.quote = watchlistEntry.quote;
+  result.venue = watchlistEntry.venue;
   result = applyRiskManagement(result);
 
   const data = computeIndicators(candles);
@@ -258,17 +260,17 @@ async function loadApp() {
   let btcPowerLawRendered = false;
   let done = 0;
 
-  for (const symbol of watchlist) {
-    setStatus(`Chargement… (${done + 1}/${watchlist.length}) ${symbol}`);
+  for (const watchlistEntry of watchlist) {
+    setStatus(`Chargement… (${done + 1}/${watchlist.length}) ${watchlistEntry.symbol}`);
     try {
-      const entry = await processSymbol(symbol);
+      const entry = await processSymbol(watchlistEntry);
       if (!entry) continue;
 
-      if (!btcPowerLawRendered && symbol === "BTCUSDT") {
+      if (!btcPowerLawRendered && watchlistEntry.symbol === "BTC") {
         const powerLawInfo = corridorPosition(entry.result.close);
         const container = document.getElementById("powerlaw-container");
         container.innerHTML = "";
-        const node = powerLawEl(powerLawInfo);
+        const node = powerLawEl(powerLawInfo, watchlistEntry.quote);
         if (node) container.appendChild(node);
         btcPowerLawRendered = true;
       }
@@ -276,7 +278,7 @@ async function loadApp() {
       defaultEntries.push(entry);
       if (!searchActive) cardsContainer.appendChild(cardEl(entry));
     } catch (e) {
-      console.error(symbol, e);
+      console.error(watchlistEntry.symbol, e);
     }
     done++;
   }
@@ -303,9 +305,12 @@ function showSuggestions(matches) {
     box.style.display = "block";
     return;
   }
-  matches.slice(0, 8).forEach((symbol) => {
-    const item = el("div", { class: "suggestion-item", textContent: symbol.replace("USDT", "/USDT") });
-    item.addEventListener("click", () => selectSearchSymbol(symbol));
+  matches.slice(0, 8).forEach((watchlistEntry) => {
+    const item = el("div", {
+      class: "suggestion-item",
+      textContent: `${watchlistEntry.symbol}/${watchlistEntry.quote}`,
+    });
+    item.addEventListener("click", () => selectSearchSymbol(watchlistEntry));
     box.appendChild(item);
   });
   box.style.display = "block";
@@ -315,21 +320,22 @@ function hideSuggestions() {
   document.getElementById("search-suggestions").style.display = "none";
 }
 
-async function selectSearchSymbol(symbol) {
-  document.getElementById("search-input").value = symbol.replace("USDT", "/USDT");
+async function selectSearchSymbol(watchlistEntry) {
+  const display = `${watchlistEntry.symbol}/${watchlistEntry.quote}`;
+  document.getElementById("search-input").value = display;
   hideSuggestions();
   document.getElementById("search-clear").style.display = "block";
   searchActive = true;
 
-  setStatus(`Chargement de ${symbol.replace("USDT", "/USDT")}…`);
+  setStatus(`Chargement de ${display}…`);
   document.getElementById("cards").innerHTML = "";
   try {
-    const entry = await processSymbol(symbol);
+    const entry = await processSymbol(watchlistEntry);
     if (entry) {
       renderCards([entry]);
-      setStatus(`Résultat pour ${symbol.replace("USDT", "/USDT")}`);
+      setStatus(`Résultat pour ${display}`);
     } else {
-      setStatus(`Historique insuffisant pour ${symbol.replace("USDT", "/USDT")}`);
+      setStatus(`Historique insuffisant pour ${display}`);
     }
   } catch (e) {
     setStatus(`Erreur: ${e.message}`);
@@ -362,7 +368,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const universe = await getSearchUniverse();
-    const matches = universe.filter((s) => s.replace("USDT", "").includes(query));
+    const matches = universe.filter((watchlistEntry) => watchlistEntry.symbol.includes(query));
     showSuggestions(matches);
   });
 
