@@ -86,16 +86,25 @@ async function fetchKrakenAssets() {
   }
 }
 
+// CoinGecko plafonne per_page a 250: au-dela il faut paginer (page=2, 3...).
+async function fetchMarketsPage(page) {
+  const resp = await fetch(
+    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}`
+  );
+  return resp.json();
+}
+
 async function fetchTopSymbols(limit = CONFIG.watchlistSize) {
   const stableResp = await fetch(
     "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=stablecoins&per_page=250"
   );
   const stableIds = new Set((await stableResp.json()).map((c) => c.id));
 
-  const marketsResp = await fetch(
-    "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250"
+  const pageCount = Math.max(1, Math.ceil(limit / 250));
+  const pages = await Promise.all(
+    Array.from({ length: pageCount }, (_, i) => fetchMarketsPage(i + 1))
   );
-  const markets = await marketsResp.json();
+  const markets = pages.flat();
   const candidates = markets.filter((c) => !stableIds.has(c.id));
 
   const [binanceAssets, hyperliquidAssets, krakenAssets] = await Promise.all([

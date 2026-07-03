@@ -430,7 +430,7 @@ async function showFavoritesView() {
   }
 }
 
-// --- Listes de surveillance achat/vente (top 10 sur l'ensemble du top 100) ---
+// --- Listes de surveillance achat/vente (top 10 sur l'ensemble du top 500) ---
 
 async function ensureRankedEntries() {
   if (rankedEntriesLoaded) return rankedEntries;
@@ -456,7 +456,7 @@ async function ensureRankedEntries() {
       batchResults.forEach((entry) => entry && results.push(entry));
       done += batch.length;
       if (viewMode === "buyWatchlist" || viewMode === "sellWatchlist") {
-        setStatus(`Analyse du top 100… (${Math.min(done, universe.length)}/${universe.length})`);
+        setStatus(`Analyse en cours… (${Math.min(done, universe.length)}/${universe.length})`);
       }
     }
     rankedEntries = results;
@@ -485,7 +485,7 @@ async function showBuyWatchlistView() {
     renderRankedList("buy");
     return;
   }
-  setStatus("Analyse du top 100…");
+  setStatus("Analyse en cours…");
   document.getElementById("cards").innerHTML = "";
   await ensureRankedEntries();
   if (viewMode === "buyWatchlist") renderRankedList("buy");
@@ -500,17 +500,19 @@ async function showSellWatchlistView() {
     renderRankedList("sell");
     return;
   }
-  setStatus("Analyse du top 100…");
+  setStatus("Analyse en cours…");
   document.getElementById("cards").innerHTML = "";
   await ensureRankedEntries();
   if (viewMode === "sellWatchlist") renderRankedList("sell");
 }
 
-// --- Recherche (top 100, une seule fiche affichee a la selection) ---
+// --- Recherche (top 500, une seule fiche affichee a la selection) ---
+
+const SEARCH_UNIVERSE_SIZE = 500;
 
 async function getSearchUniverse() {
   if (!searchUniverseCache) {
-    searchUniverseCache = await getWatchlist(100);
+    searchUniverseCache = await getWatchlist(SEARCH_UNIVERSE_SIZE);
   }
   return searchUniverseCache;
 }
@@ -519,7 +521,7 @@ function showSuggestions(matches) {
   const box = document.getElementById("search-suggestions");
   box.innerHTML = "";
   if (matches.length === 0) {
-    box.appendChild(el("div", { class: "suggestion-empty", textContent: "Aucun résultat dans le top 100." }));
+    box.appendChild(el("div", { class: "suggestion-empty", textContent: "Aucun résultat dans le top 500." }));
     box.style.display = "block";
     return;
   }
