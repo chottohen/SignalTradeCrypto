@@ -16,28 +16,73 @@
     <h1>SignalTrade</h1>
     <button id="refresh-btn">Actualiser</button>
   </div>
-  <div class="search-wrap">
-    <input type="text" id="search-input" placeholder="Rechercher une paire (top 500)…" autocomplete="off" autocapitalize="characters">
-    <button id="search-clear" aria-label="Effacer la recherche" style="display:none;">×</button>
-    <div id="search-suggestions" class="search-suggestions" style="display:none;"></div>
+  <div class="page-tabs">
+    <button id="tab-market-btn" class="page-tab active" type="button">Marché</button>
+    <button id="tab-portfolio-btn" class="page-tab" type="button">Portefeuille</button>
   </div>
-  <div class="view-toggle">
-    <button id="view-default-btn" class="view-btn active" type="button">Top 10</button>
-    <button id="view-favorites-btn" class="view-btn" type="button">Favoris</button>
-    <button id="view-buy-btn" class="view-btn icon-btn buy" type="button" aria-label="Top 10 achat/conservation" title="Top 10 achat/conservation">👍</button>
-    <button id="view-sell-btn" class="view-btn icon-btn sell" type="button" aria-label="Top 10 vente prioritaire" title="Top 10 vente prioritaire">👎</button>
+  <div id="market-controls">
+    <div class="search-wrap">
+      <input type="text" id="search-input" placeholder="Rechercher une paire (top 500)…" autocomplete="off" autocapitalize="characters">
+      <button id="search-clear" aria-label="Effacer la recherche" style="display:none;">×</button>
+      <div id="search-suggestions" class="search-suggestions" style="display:none;"></div>
+    </div>
+    <div class="view-toggle">
+      <button id="view-default-btn" class="view-btn active" type="button">Top 10</button>
+      <button id="view-favorites-btn" class="view-btn" type="button">Favoris</button>
+      <button id="view-buy-btn" class="view-btn icon-btn buy" type="button" aria-label="Top 10 achat/conservation" title="Top 10 achat/conservation">👍</button>
+      <button id="view-sell-btn" class="view-btn icon-btn sell" type="button" aria-label="Top 10 vente prioritaire" title="Top 10 vente prioritaire">👎</button>
+    </div>
+    <p id="status">Chargement…</p>
+    <div id="macro-row" class="macro-row"></div>
   </div>
-  <p id="status">Chargement…</p>
-  <div id="macro-row" class="macro-row"></div>
 </header>
 <main>
-  <div id="powerlaw-container"></div>
-  <div id="cards"></div>
+  <div id="market-page">
+    <div id="powerlaw-container"></div>
+    <div id="cards"></div>
+  </div>
+  <div id="portfolio-page" style="display:none;">
+    <div class="portfolio-summary">
+      <p class="portfolio-value" id="portfolio-total-value">—</p>
+      <p class="portfolio-pnl" id="portfolio-total-pnl"></p>
+      <p class="portfolio-cash" id="portfolio-cash"></p>
+    </div>
+    <div id="portfolio-holdings" class="portfolio-holdings"></div>
+  </div>
 </main>
 <p class="footer-note">
   Outil d'aide à la décision. Ne constitue pas un conseil financier.
   Aucune position ne doit être ouverte sans supervision humaine et backtest préalable.
 </p>
+
+<div id="portfolio-actions" class="portfolio-actions" style="display:none;">
+  <button id="btn-buy" class="trade-btn buy" type="button">Achat</button>
+  <button id="btn-sell" class="trade-btn sell" type="button">Vente</button>
+</div>
+
+<div id="trade-modal" class="trade-modal" style="display:none;">
+  <div class="trade-modal-content">
+    <h2 id="trade-modal-title">Achat</h2>
+    <div class="search-wrap">
+      <input type="text" id="trade-symbol-input" placeholder="Rechercher une crypto…" autocomplete="off" autocapitalize="characters">
+      <div id="trade-symbol-suggestions" class="search-suggestions" style="display:none;"></div>
+    </div>
+    <p id="trade-selected-info" class="trade-selected-info"></p>
+    <label class="trade-field">
+      <span>Montant (USD)</span>
+      <input type="number" id="trade-usd-input" inputmode="decimal" min="0" step="any">
+    </label>
+    <label class="trade-field">
+      <span>Quantité</span>
+      <input type="number" id="trade-crypto-input" inputmode="decimal" min="0" step="any">
+    </label>
+    <p id="trade-error" class="trade-error" style="display:none;"></p>
+    <div class="trade-modal-buttons">
+      <button id="trade-cancel-btn" class="trade-modal-btn cancel" type="button">Annuler</button>
+      <button id="trade-confirm-btn" class="trade-modal-btn confirm" type="button">Valider</button>
+    </div>
+  </div>
+</div>
 
 <script src="js/config.js"></script>
 <script src="js/formatting.js"></script>
@@ -52,5 +97,6 @@
 <script src="js/powerLaw.js"></script>
 <script src="js/dataFetcher.js"></script>
 <script src="js/app.js"></script>
+<script src="js/portfolio.js"></script>
 </body>
 </html>

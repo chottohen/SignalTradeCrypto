@@ -256,6 +256,9 @@ function renderCards(entries) {
   entries.forEach((entry) => container.appendChild(cardEl(entry)));
 }
 
+// Page active: "market" (fiches/recherche/listes) ou "portfolio".
+let currentPage = "market";
+
 // Fiches par defaut (top 10) gardees en memoire pour un retour instantane
 // quand la recherche est effacee, sans re-telecharger les donnees.
 let defaultEntries = [];
@@ -599,9 +602,28 @@ function clearSearch() {
   (VIEW_SHOWERS[lastNonSearchView] || showDefaultView)();
 }
 
+function switchPage(page) {
+  currentPage = page;
+  document.getElementById("tab-market-btn").classList.toggle("active", page === "market");
+  document.getElementById("tab-portfolio-btn").classList.toggle("active", page === "portfolio");
+  document.getElementById("market-controls").style.display = page === "market" ? "" : "none";
+  document.getElementById("market-page").style.display = page === "market" ? "" : "none";
+  document.getElementById("portfolio-page").style.display = page === "portfolio" ? "" : "none";
+  document.getElementById("portfolio-actions").style.display = page === "portfolio" ? "flex" : "none";
+  document.body.classList.toggle("has-trade-bar", page === "portfolio");
+  if (page === "portfolio") renderPortfolioPage();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
+  document.getElementById("tab-market-btn").addEventListener("click", () => switchPage("market"));
+  document.getElementById("tab-portfolio-btn").addEventListener("click", () => switchPage("portfolio"));
+
   document.getElementById("refresh-btn").addEventListener("click", () => {
+    if (currentPage === "portfolio") {
+      renderPortfolioPage();
+      return;
+    }
     favoriteEntriesLoaded = false;
     rankedEntriesLoaded = false;
     if (viewMode === "favorites") showFavoritesView();
