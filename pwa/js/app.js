@@ -93,6 +93,30 @@ function supertrendEl(status) {
   });
 }
 
+function starEl(symbol) {
+  const fav = isFavorite(symbol);
+  const btn = el("button", {
+    class: fav ? "star-btn favorite" : "star-btn",
+    type: "button",
+    "aria-label": fav ? "Retirer des favoris" : "Ajouter aux favoris",
+    textContent: fav ? "★" : "☆",
+  });
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleFavorite(symbol);
+    favoriteEntriesLoaded = false;
+    if (viewMode === "favorites") {
+      showFavoritesView();
+      return;
+    }
+    const nowFav = isFavorite(symbol);
+    btn.classList.toggle("favorite", nowFav);
+    btn.textContent = nowFav ? "★" : "☆";
+    btn.setAttribute("aria-label", nowFav ? "Retirer des favoris" : "Ajouter aux favoris");
+  });
+  return btn;
+}
+
 function cardEl(entry) {
   const { result, trendAlert, levels, variations, supertrend } = entry;
   const { label: displayLabel, watchLevel } = resolveDisplayLabel(result.signal, result.close, levels);
@@ -109,7 +133,7 @@ function cardEl(entry) {
       ]),
       el("p", { class: "price", textContent: `${formatPrice(result.close)} ${result.quote}` }),
     ]),
-    badgeEl(displayLabel),
+    el("div", { class: "card-right-group" }, [starEl(result.symbol), badgeEl(displayLabel)]),
   ]);
 
   const rationale = el("p", { class: "rationale", textContent: result.rationale });
@@ -224,7 +248,45 @@ function renderCards(entries) {
 // quand la recherche est effacee, sans re-telecharger les donnees.
 let defaultEntries = [];
 let searchUniverseCache = null;
-let searchActive = false;
+
+// viewMode: "default" (top 10), "favorites", ou "search" (aucun des deux
+// boutons actif). lastNonSearchView retient le mode a restaurer quand la
+// recherche est effacee.
+let viewMode = "default";
+let lastNonSearchView = "default";
+
+const FAVORITES_KEY = "signaltrade_favorites_v1";
+const DEFAULT_FAVORITES = ["BTC", "ETH", "BNB", "SOL", "HYPE", "MORPHO"];
+
+function loadFavorites() {
+  const raw = localStorage.getItem(FAVORITES_KEY);
+  if (raw) {
+    try {
+      return new Set(JSON.parse(raw));
+    } catch (e) {
+      // cache corrompu, on repart des favoris par defaut
+    }
+  }
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(DEFAULT_FAVORITES));
+  return new Set(DEFAULT_FAVORITES);
+}
+
+const favorites = loadFavorites();
+
+function isFavorite(symbol) {
+  return favorites.has(symbol);
+}
+
+function toggleFavorite(symbol) {
+  if (favorites.has(symbol)) favorites.delete(symbol);
+  else favorites.add(symbol);
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(favorites)));
+}
+
+// Fiches favoris gardees en memoire pour un retour instantane, invalidees
+// des qu'un favori est ajoute/retire (favoriteEntriesLoaded = false).
+let favoriteEntries = [];
+let favoriteEntriesLoaded = false;
 
 async function processSymbol(watchlistEntry) {
   const candles = await fetchCandles(watchlistEntry);
@@ -280,15 +342,69 @@ async function loadApp() {
       }
 
       defaultEntries.push(entry);
-      if (!searchActive) cardsContainer.appendChild(cardEl(entry));
+      if (viewMode === "default") cardsContainer.appendChild(cardEl(entry));
     } catch (e) {
       console.error(watchlistEntry.symbol, e);
     }
     done++;
   }
 
-  if (!searchActive) {
+  if (viewMode === "default") {
     setStatus(`Mis à jour à ${new Date().toLocaleTimeString("fr-FR")}`);
+  }
+}
+
+// --- Bascule Top 10 / Favoris / Recherche ---
+
+function updateViewButtons() {
+  document.getElementById("view-default-btn").classList.toggle("active", viewMode === "default");
+  document.getElementById("view-favorites-btn").classList.toggle("active", viewMode === "favorites");
+}
+
+function showDefaultView() {
+  viewMode = "default";
+  lastNonSearchView = "default";
+  updateViewButtons();
+  renderCards(defaultEntries);
+  setStatus(`Mis à jour à ${new Date().toLocaleTimeString("fr-FR")}`);
+}
+
+async function ensureFavoriteEntries() {
+  if (favoriteEntriesLoaded) return favoriteEntries;
+  const universe = await getSearchUniverse();
+  const favWatchlist = universe.filter((entry) => favorites.has(entry.symbol));
+  const results = [];
+  for (const watchlistEntry of favWatchlist) {
+    try {
+      const entry = await processSymbol(watchlistEntry);
+      if (entry) results.push(entry);
+    } catch (e) {
+      console.error(watchlistEntry.symbol, e);
+    }
+  }
+  results.sort((a, b) => a.result.rank - b.result.rank);
+  favoriteEntries = results;
+  favoriteEntriesLoaded = true;
+  return favoriteEntries;
+}
+
+async function showFavoritesView() {
+  viewMode = "favorites";
+  lastNonSearchView = "favorites";
+  updateViewButtons();
+
+  if (favoriteEntriesLoaded) {
+    renderCards(favoriteEntries);
+    setStatus(`Favoris — ${favoriteEntries.length} actif(s)`);
+    return;
+  }
+
+  setStatus("Chargement des favoris…");
+  document.getElementById("cards").innerHTML = "";
+  const results = await ensureFavoriteEntries();
+  if (viewMode === "favorites") {
+    renderCards(results);
+    setStatus(`Favoris — ${results.length} actif(s)`);
   }
 }
 
@@ -329,7 +445,8 @@ async function selectSearchSymbol(watchlistEntry) {
   document.getElementById("search-input").value = display;
   hideSuggestions();
   document.getElementById("search-clear").style.display = "block";
-  searchActive = true;
+  viewMode = "search";
+  updateViewButtons();
 
   setStatus(`Chargement de ${display}…`);
   document.getElementById("cards").innerHTML = "";
@@ -350,14 +467,36 @@ function clearSearch() {
   document.getElementById("search-input").value = "";
   document.getElementById("search-clear").style.display = "none";
   hideSuggestions();
-  searchActive = false;
-  renderCards(defaultEntries);
-  setStatus(`Mis à jour à ${new Date().toLocaleTimeString("fr-FR")}`);
+  if (lastNonSearchView === "favorites") {
+    showFavoritesView();
+  } else {
+    showDefaultView();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
-  document.getElementById("refresh-btn").addEventListener("click", loadApp);
+  document.getElementById("refresh-btn").addEventListener("click", () => {
+    favoriteEntriesLoaded = false;
+    if (viewMode === "favorites") {
+      showFavoritesView();
+    } else {
+      loadApp();
+    }
+  });
+
+  document.getElementById("view-default-btn").addEventListener("click", () => {
+    document.getElementById("search-input").value = "";
+    document.getElementById("search-clear").style.display = "none";
+    hideSuggestions();
+    showDefaultView();
+  });
+  document.getElementById("view-favorites-btn").addEventListener("click", () => {
+    document.getElementById("search-input").value = "";
+    document.getElementById("search-clear").style.display = "none";
+    hideSuggestions();
+    showFavoritesView();
+  });
 
   const searchInput = document.getElementById("search-input");
   const searchClear = document.getElementById("search-clear");
@@ -370,6 +509,9 @@ document.addEventListener("DOMContentLoaded", () => {
       clearSearch();
       return;
     }
+
+    viewMode = "search";
+    updateViewButtons();
 
     const universe = await getSearchUniverse();
     const matches = universe.filter((watchlistEntry) => watchlistEntry.symbol.includes(query));

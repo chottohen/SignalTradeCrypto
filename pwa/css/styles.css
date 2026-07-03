@@ -119,6 +119,28 @@ h1 {
   color: #5F5E5A;
 }
 
+.view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.view-btn {
+  flex: 1;
+  background: #FFFFFF;
+  border: 1px solid #E3E1D8;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 13px;
+  color: #5F5E5A;
+}
+.view-btn.active {
+  background: #EAF3DE;
+  border-color: #3B6D11;
+  color: #173404;
+  font-weight: 600;
+}
+
 .macro-row {
   display: flex;
   gap: 8px;
@@ -203,6 +225,24 @@ main {
   align-items: flex-start;
   margin-bottom: 8px;
   gap: 8px;
+}
+
+.card-right-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: #B8B6AC;
+}
+.star-btn.favorite {
+  color: #3B6D11;
 }
 
 .symbol {
