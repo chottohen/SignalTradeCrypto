@@ -469,8 +469,18 @@ async function ensureRankedEntries() {
   return results;
 }
 
+// Priorite absolue aux vraies alertes (signal ACHAT/VENTE, avec
+// stop-loss/take-profit affiches sur la fiche) avant tout depart par score:
+// une alerte active passe toujours devant un simple Renforcer/Alleger, quel
+// que soit l'ecart de confluence ou d'ADX entre les deux.
 function renderRankedList(kind) {
-  const sorted = [...rankedEntries].sort((a, b) => (kind === "buy" ? buyScore(b) - buyScore(a) : buyScore(a) - buyScore(b)));
+  const activeSignal = kind === "buy" ? "ACHAT" : "VENTE";
+  const sorted = [...rankedEntries].sort((a, b) => {
+    const aActive = a.result.signal === activeSignal ? 1 : 0;
+    const bActive = b.result.signal === activeSignal ? 1 : 0;
+    if (aActive !== bActive) return bActive - aActive;
+    return kind === "buy" ? buyScore(b) - buyScore(a) : buyScore(a) - buyScore(b);
+  });
   const top10 = sorted.slice(0, 10);
   renderCards(top10);
   setStatus(kind === "buy" ? `Top 10 achat/conservation — ${top10.length} actif(s)` : `Top 10 vente prioritaire — ${top10.length} actif(s)`);
