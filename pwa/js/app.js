@@ -249,9 +249,9 @@ function renderCards(entries) {
 let defaultEntries = [];
 let searchUniverseCache = null;
 
-// viewMode: "default" (top 10), "favorites", ou "search" (aucun des deux
-// boutons actif). lastNonSearchView retient le mode a restaurer quand la
-// recherche est effacee.
+// viewMode: "default" (top 10), "favorites", "buyWatchlist", "sellWatchlist",
+// ou "search" (aucun bouton actif). lastNonSearchView retient le mode a
+// restaurer quand la recherche est effacee.
 let viewMode = "default";
 let lastNonSearchView = "default";
 
@@ -287,6 +287,26 @@ function toggleFavorite(symbol) {
 // des qu'un favori est ajoute/retire (favoriteEntriesLoaded = false).
 let favoriteEntries = [];
 let favoriteEntriesLoaded = false;
+
+// Evaluation complete du top 100 (partagee entre les listes achat et vente,
+// qui ne sont que deux tris opposes du meme jeu de resultats). Invalidee au
+// clic sur "Actualiser".
+let rankedEntries = [];
+let rankedEntriesLoaded = false;
+let rankedEntriesPromise = null;
+
+// Score heuristique "favorable a l'achat/conservation": priorite au statut
+// affiche (ACHAT > RENFORCER > neutre > ALLEGER > VENTE), puis a la
+// confluence nette (haussier - baissier) et a l'ADX comme departage.
+const BUY_LABEL_SCORE = { ACHAT: 4, RENFORCER: 3, CALME: 2, A_SURVEILLER: 2, ALLEGER: 1, VENTE: 0 };
+
+function buyScore(entry) {
+  const { result, levels } = entry;
+  const { label } = resolveDisplayLabel(result.signal, result.close, levels);
+  const categoryScore = BUY_LABEL_SCORE[label] ?? 2;
+  const confluenceNet = result.confirmationsBull.length - result.confirmationsBear.length;
+  return categoryScore * 100 + confluenceNet * 10 + result.adx * 0.1;
+}
 
 async function processSymbol(watchlistEntry) {
   const candles = await fetchCandles(watchlistEntry);
@@ -359,6 +379,8 @@ async function loadApp() {
 function updateViewButtons() {
   document.getElementById("view-default-btn").classList.toggle("active", viewMode === "default");
   document.getElementById("view-favorites-btn").classList.toggle("active", viewMode === "favorites");
+  document.getElementById("view-buy-btn").classList.toggle("active", viewMode === "buyWatchlist");
+  document.getElementById("view-sell-btn").classList.toggle("active", viewMode === "sellWatchlist");
 }
 
 function showDefaultView() {
@@ -406,6 +428,82 @@ async function showFavoritesView() {
     renderCards(results);
     setStatus(`Favoris — ${results.length} actif(s)`);
   }
+}
+
+// --- Listes de surveillance achat/vente (top 10 sur l'ensemble du top 100) ---
+
+async function ensureRankedEntries() {
+  if (rankedEntriesLoaded) return rankedEntries;
+  if (rankedEntriesPromise) return rankedEntriesPromise;
+
+  rankedEntriesPromise = (async () => {
+    const universe = await getSearchUniverse();
+    const results = [];
+    const concurrency = 10;
+    let done = 0;
+    for (let i = 0; i < universe.length; i += concurrency) {
+      const batch = universe.slice(i, i + concurrency);
+      const batchResults = await Promise.all(
+        batch.map(async (watchlistEntry) => {
+          try {
+            return await processSymbol(watchlistEntry);
+          } catch (e) {
+            console.error(watchlistEntry.symbol, e);
+            return null;
+          }
+        })
+      );
+      batchResults.forEach((entry) => entry && results.push(entry));
+      done += batch.length;
+      if (viewMode === "buyWatchlist" || viewMode === "sellWatchlist") {
+        setStatus(`Analyse du top 100… (${Math.min(done, universe.length)}/${universe.length})`);
+      }
+    }
+    rankedEntries = results;
+    rankedEntriesLoaded = true;
+    return results;
+  })();
+
+  const results = await rankedEntriesPromise;
+  rankedEntriesPromise = null;
+  return results;
+}
+
+function renderRankedList(kind) {
+  const sorted = [...rankedEntries].sort((a, b) => (kind === "buy" ? buyScore(b) - buyScore(a) : buyScore(a) - buyScore(b)));
+  const top10 = sorted.slice(0, 10);
+  renderCards(top10);
+  setStatus(kind === "buy" ? `Top 10 achat/conservation — ${top10.length} actif(s)` : `Top 10 vente prioritaire — ${top10.length} actif(s)`);
+}
+
+async function showBuyWatchlistView() {
+  viewMode = "buyWatchlist";
+  lastNonSearchView = "buyWatchlist";
+  updateViewButtons();
+
+  if (rankedEntriesLoaded) {
+    renderRankedList("buy");
+    return;
+  }
+  setStatus("Analyse du top 100…");
+  document.getElementById("cards").innerHTML = "";
+  await ensureRankedEntries();
+  if (viewMode === "buyWatchlist") renderRankedList("buy");
+}
+
+async function showSellWatchlistView() {
+  viewMode = "sellWatchlist";
+  lastNonSearchView = "sellWatchlist";
+  updateViewButtons();
+
+  if (rankedEntriesLoaded) {
+    renderRankedList("sell");
+    return;
+  }
+  setStatus("Analyse du top 100…");
+  document.getElementById("cards").innerHTML = "";
+  await ensureRankedEntries();
+  if (viewMode === "sellWatchlist") renderRankedList("sell");
 }
 
 // --- Recherche (top 100, une seule fiche affichee a la selection) ---
@@ -463,40 +561,41 @@ async function selectSearchSymbol(watchlistEntry) {
   }
 }
 
+const VIEW_SHOWERS = {
+  default: showDefaultView,
+  favorites: showFavoritesView,
+  buyWatchlist: showBuyWatchlistView,
+  sellWatchlist: showSellWatchlistView,
+};
+
 function clearSearch() {
   document.getElementById("search-input").value = "";
   document.getElementById("search-clear").style.display = "none";
   hideSuggestions();
-  if (lastNonSearchView === "favorites") {
-    showFavoritesView();
-  } else {
-    showDefaultView();
-  }
+  (VIEW_SHOWERS[lastNonSearchView] || showDefaultView)();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
   document.getElementById("refresh-btn").addEventListener("click", () => {
     favoriteEntriesLoaded = false;
-    if (viewMode === "favorites") {
-      showFavoritesView();
-    } else {
-      loadApp();
-    }
+    rankedEntriesLoaded = false;
+    if (viewMode === "favorites") showFavoritesView();
+    else if (viewMode === "buyWatchlist") showBuyWatchlistView();
+    else if (viewMode === "sellWatchlist") showSellWatchlistView();
+    else loadApp();
   });
 
-  document.getElementById("view-default-btn").addEventListener("click", () => {
+  function switchView(showFn) {
     document.getElementById("search-input").value = "";
     document.getElementById("search-clear").style.display = "none";
     hideSuggestions();
-    showDefaultView();
-  });
-  document.getElementById("view-favorites-btn").addEventListener("click", () => {
-    document.getElementById("search-input").value = "";
-    document.getElementById("search-clear").style.display = "none";
-    hideSuggestions();
-    showFavoritesView();
-  });
+    showFn();
+  }
+  document.getElementById("view-default-btn").addEventListener("click", () => switchView(showDefaultView));
+  document.getElementById("view-favorites-btn").addEventListener("click", () => switchView(showFavoritesView));
+  document.getElementById("view-buy-btn").addEventListener("click", () => switchView(showBuyWatchlistView));
+  document.getElementById("view-sell-btn").addEventListener("click", () => switchView(showSellWatchlistView));
 
   const searchInput = document.getElementById("search-input");
   const searchClear = document.getElementById("search-clear");

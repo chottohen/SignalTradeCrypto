@@ -141,6 +141,20 @@ h1 {
   font-weight: 600;
 }
 
+.icon-btn {
+  flex: 0 0 44px;
+  font-size: 16px;
+  padding: 8px 0;
+}
+.icon-btn.buy.active {
+  background: #EAF3DE;
+  border-color: #3B6D11;
+}
+.icon-btn.sell.active {
+  background: #FCEBEB;
+  border-color: #A32D2D;
+}
+
 .macro-row {
   display: flex;
   gap: 8px;
