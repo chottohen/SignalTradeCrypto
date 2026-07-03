@@ -117,6 +117,18 @@ function starEl(symbol) {
   return btn;
 }
 
+function chartLinkEl(symbol) {
+  return el("a", {
+    class: "chart-link",
+    href: `https://fr.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}USD`,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    title: "Ouvrir le graphique sur TradingView",
+    onclick: (e) => e.stopPropagation(),
+    textContent: "📈",
+  });
+}
+
 function cardEl(entry) {
   const { result, trendAlert, levels, variations, supertrend } = entry;
   const { label: displayLabel, watchLevel } = resolveDisplayLabel(result.signal, result.close, levels);
@@ -133,7 +145,7 @@ function cardEl(entry) {
       ]),
       el("p", { class: "price", textContent: `${formatPrice(result.close)} ${result.quote}` }),
     ]),
-    el("div", { class: "card-right-group" }, [starEl(result.symbol), badgeEl(displayLabel)]),
+    el("div", { class: "card-right-group" }, [starEl(result.symbol), chartLinkEl(result.symbol), badgeEl(displayLabel)]),
   ]);
 
   const rationale = el("p", { class: "rationale", textContent: result.rationale });
