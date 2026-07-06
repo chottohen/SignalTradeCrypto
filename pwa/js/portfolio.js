@@ -272,6 +272,7 @@ function openTradeModal(side) {
   document.getElementById("trade-stoploss-input").value = "";
   document.getElementById("trade-stoploss-field").style.display = side === "BUY" ? "block" : "none";
   document.getElementById("trade-selected-info").textContent = "";
+  document.getElementById("trade-levels-info").innerHTML = "";
   document.getElementById("trade-error").style.display = "none";
   hideTradeSuggestions();
   document.getElementById("trade-modal").style.display = "flex";
@@ -329,15 +330,31 @@ async function selectTradeSymbol(symbol) {
     document.getElementById("trade-selected-info").textContent = "Cours indisponible pour cet actif.";
     return;
   }
+  const levelsInfoEl = document.getElementById("trade-levels-info");
+  levelsInfoEl.innerHTML = "";
   try {
     const candles = await fetchCandles(entry);
     tradeState.entry = entry;
     tradeState.price = candles[candles.length - 1].close;
     document.getElementById("trade-selected-info").textContent = `${symbol} — cours actuel : ${formatPrice(tradeState.price)} $`;
 
+    // Les 3 horizons (court/moyen/long terme) sont calcules avant toute
+    // decision d'achat ou de vente, pour situer le cours par rapport aux
+    // niveaux techniques dans les deux cas.
+    const horizonData = await buildHorizonData(entry, candles, HORIZON_SETS.all);
+    const levels = analyzeSymbol(tradeState.price, horizonData);
+    const { nearestSupport, nearestResistance } = nearestPair(levels, tradeState.price);
+
+    if (nearestSupport || nearestResistance) {
+      levelsInfoEl.appendChild(
+        el("div", {}, [
+          levelBlock("Résistance", nearestResistance, tradeState.price, null, false),
+          levelBlock("Support", nearestSupport, tradeState.price, null, true),
+        ])
+      );
+    }
+
     if (tradeState.side === "BUY") {
-      const horizonData = await buildHorizonData(entry, candles, HORIZON_SETS.all);
-      const { nearestSupport } = nearestPair(analyzeSymbol(tradeState.price, horizonData), tradeState.price);
       document.getElementById("trade-stoploss-input").value = nearestSupport ? nearestSupport.price : "";
     }
   } catch (e) {

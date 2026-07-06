@@ -645,6 +645,13 @@ main {
   margin: -4px 0 12px;
   min-height: 16px;
 }
+.trade-levels-info:not(:empty) {
+  background: #FFFFFF;
+  border: 1px solid #E3E1D8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: -4px 0 12px;
+}
 .trade-field {
   display: block;
   margin-bottom: 12px;
