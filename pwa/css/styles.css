@@ -509,6 +509,54 @@ main {
   margin: 0;
 }
 
+.history-item.stop-red,
+.history-item.stop-orange,
+.history-item.stop-green {
+  border-radius: 8px;
+  padding: 8px;
+  margin: 4px 0;
+  border-bottom: none;
+}
+.history-item.stop-red { background: #FCEBEB; }
+.history-item.stop-orange { background: #FAEEDA; }
+.history-item.stop-green { background: #EAF3DE; }
+
+.history-stoploss {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 100%;
+  margin-top: 2px;
+}
+.history-stoploss span:first-child {
+  font-size: 11px;
+  color: #5F5E5A;
+}
+.history-stoploss-input {
+  width: 100px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid #E3E1D8;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #FFFFFF;
+  color: #2C2C2A;
+}
+.history-stoploss-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #FFFFFF;
+}
+.history-stoploss-badge.stop-red { background: #A32D2D; }
+.history-stoploss-badge.stop-orange { background: #854F0B; }
+.history-stoploss-badge.stop-green { background: #3B6D11; }
+
+#portfolio-alert:not(:empty) {
+  margin-bottom: 10px;
+}
+
 .portfolio-actions {
   position: fixed;
   bottom: 0;

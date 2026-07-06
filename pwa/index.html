@@ -47,6 +47,7 @@
       <p class="portfolio-pnl" id="portfolio-total-pnl"></p>
       <p class="portfolio-cash" id="portfolio-cash"></p>
     </div>
+    <div id="portfolio-alert"></div>
     <div id="portfolio-holdings" class="portfolio-holdings"></div>
   </div>
 </main>
@@ -75,6 +76,10 @@
     <label class="trade-field">
       <span>Quantité</span>
       <input type="number" id="trade-crypto-input" inputmode="decimal" min="0" step="any">
+    </label>
+    <label class="trade-field" id="trade-stoploss-field" style="display:none;">
+      <span>Stop-loss indicatif (USD)</span>
+      <input type="number" id="trade-stoploss-input" inputmode="decimal" min="0" step="any">
     </label>
     <p id="trade-error" class="trade-error" style="display:none;"></p>
     <div class="trade-modal-buttons">

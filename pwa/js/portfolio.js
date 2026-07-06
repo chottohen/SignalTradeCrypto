@@ -26,7 +26,7 @@ function savePortfolio() {
 // Cout d'acquisition suivi en moyenne ponderee (pas de FIFO/LIFO): a chaque
 // vente partielle, on retire du cout de base la meme proportion que la part
 // vendue de la position, ce qui preserve le cout moyen par unite restante.
-function executeTrade(symbol, side, usdAmount, cryptoAmount, price) {
+function executeTrade(symbol, side, usdAmount, cryptoAmount, price, stopLoss) {
   if (side === "BUY") {
     portfolio.cashUsd -= usdAmount;
     const holding = portfolio.holdings[symbol] || { quantity: 0, costBasisUsd: 0 };
@@ -51,8 +51,55 @@ function executeTrade(symbol, side, usdAmount, cryptoAmount, price) {
     usdAmount,
     cryptoAmount,
     price,
+    stopLoss: side === "BUY" ? stopLoss : null,
   });
   savePortfolio();
+}
+
+// Statut du stop-loss indicatif d'un achat par rapport au cours actuel:
+// "red" si le cours l'a casse, "orange" si on en est a moins de 5%, "green"
+// sinon. null si aucun stop-loss n'a ete renseigne pour cette ligne.
+function stopLossStatus(currentPrice, stopLoss) {
+  if (stopLoss == null || !(stopLoss > 0)) return null;
+  if (currentPrice <= stopLoss) return "red";
+  const distancePct = ((currentPrice - stopLoss) / currentPrice) * 100;
+  return distancePct < 5 ? "orange" : "green";
+}
+
+function computeStopLossAlerts(priced) {
+  let redCount = 0;
+  let orangeCount = 0;
+  priced.forEach((p) => {
+    portfolio.transactions
+      .filter((t) => t.symbol === p.symbol && t.side === "BUY" && t.stopLoss != null)
+      .forEach((t) => {
+        const status = stopLossStatus(p.price, t.stopLoss);
+        if (status === "red") redCount++;
+        else if (status === "orange") orangeCount++;
+      });
+  });
+  return { redCount, orangeCount };
+}
+
+// Snapshot des derniers prix recuperes par renderPortfolioPage(), reutilise
+// pour rafraichir l'alerte instantanement apres l'edition d'un stop-loss
+// dans l'historique, sans re-telecharger les cours.
+let lastPricedHoldings = [];
+
+function renderPortfolioAlert() {
+  const container = document.getElementById("portfolio-alert");
+  container.innerHTML = "";
+  const { redCount, orangeCount } = computeStopLossAlerts(lastPricedHoldings);
+  if (redCount === 0 && orangeCount === 0) return;
+
+  const parts = [];
+  if (redCount > 0) parts.push(`${redCount} stop-loss atteint${redCount > 1 ? "s" : ""}`);
+  if (orangeCount > 0) parts.push(`${orangeCount} proche${orangeCount > 1 ? "s" : ""} du niveau actuel`);
+  const bg = redCount > 0 ? "#FCEBEB" : "#FAEEDA";
+  const color = redCount > 0 ? "#501313" : "#412402";
+  container.appendChild(
+    el("div", { class: "alert-box", style: `background:${bg};color:${color};`, textContent: `⚠ ${parts.join(" · ")}` })
+  );
 }
 
 function holdingRowEl(priced, totalValue) {
@@ -76,7 +123,7 @@ function holdingRowEl(priced, totalValue) {
   ]);
 
   const history = el("div", { class: "holding-history", style: "display:none;" });
-  renderHistoryFor(symbol, history);
+  renderHistoryFor(symbol, history, price);
 
   row.addEventListener("click", () => {
     const visible = history.style.display !== "none";
@@ -86,7 +133,9 @@ function holdingRowEl(priced, totalValue) {
   return el("div", { class: "holding-wrapper" }, [row, history]);
 }
 
-function renderHistoryFor(symbol, container) {
+const STOP_LOSS_BADGE_LABEL = { red: "Stop atteint", orange: "Stop proche", green: "Stop loin" };
+
+function renderHistoryFor(symbol, container, currentPrice) {
   container.innerHTML = "";
   const txs = portfolio.transactions.filter((t) => t.symbol === symbol).slice().reverse();
   if (txs.length === 0) {
@@ -96,16 +145,42 @@ function renderHistoryFor(symbol, container) {
   txs.forEach((t) => {
     const sideLabel = t.side === "BUY" ? "Achat" : "Vente";
     const sideColor = t.side === "BUY" ? GREEN : RED;
-    container.appendChild(
-      el("div", { class: "history-item" }, [
-        el("p", { class: "history-side", style: `color:${sideColor};`, textContent: sideLabel }),
-        el("p", {
-          class: "history-detail",
-          textContent: `${formatPrice(t.cryptoAmount)} ${symbol} · ${formatPrice(t.usdAmount)} $ · ${formatPrice(t.price)} $/u`,
-        }),
-        el("p", { class: "history-date", textContent: new Date(t.timestamp).toLocaleString("fr-FR") }),
-      ])
-    );
+    const status = t.side === "BUY" ? stopLossStatus(currentPrice, t.stopLoss) : null;
+
+    const children = [
+      el("p", { class: "history-side", style: `color:${sideColor};`, textContent: sideLabel }),
+      el("p", {
+        class: "history-detail",
+        textContent: `${formatPrice(t.cryptoAmount)} ${symbol} · ${formatPrice(t.usdAmount)} $ · ${formatPrice(t.price)} $/u`,
+      }),
+      el("p", { class: "history-date", textContent: new Date(t.timestamp).toLocaleString("fr-FR") }),
+    ];
+
+    if (t.side === "BUY") {
+      const stopInput = el("input", {
+        type: "number",
+        class: "history-stoploss-input",
+        value: t.stopLoss != null ? t.stopLoss : "",
+        inputmode: "decimal",
+        step: "any",
+      });
+      stopInput.addEventListener("click", (e) => e.stopPropagation());
+      stopInput.addEventListener("change", (e) => {
+        const val = parseFloat(e.target.value);
+        t.stopLoss = isNaN(val) ? null : val;
+        savePortfolio();
+        renderHistoryFor(symbol, container, currentPrice);
+        renderPortfolioAlert();
+      });
+
+      const stopRow = [el("span", { textContent: "Stop-loss :" }), stopInput];
+      if (status) {
+        stopRow.push(el("span", { class: `history-stoploss-badge stop-${status}`, textContent: STOP_LOSS_BADGE_LABEL[status] }));
+      }
+      children.push(el("div", { class: "history-stoploss" }, stopRow));
+    }
+
+    container.appendChild(el("div", { class: status ? `history-item stop-${status}` : "history-item" }, children));
   });
 }
 
@@ -119,6 +194,8 @@ async function renderPortfolioPage() {
     document.getElementById("portfolio-total-value").textContent = `${formatPrice(portfolio.cashUsd)} $`;
     document.getElementById("portfolio-total-pnl").textContent = "Aucune position ouverte";
     document.getElementById("portfolio-total-pnl").style.color = "";
+    lastPricedHoldings = [];
+    document.getElementById("portfolio-alert").innerHTML = "";
     container.innerHTML = "";
     container.appendChild(
       el("p", { class: "portfolio-empty", textContent: "Aucune crypto détenue. Utilisez le bouton Achat pour commencer." })
@@ -156,6 +233,9 @@ async function renderPortfolioPage() {
   pnlEl.textContent = `${totalPnlSign}${formatPrice(totalPnlUsd)} $ (${totalPnlSign}${totalPnlPct.toFixed(1)}%) latent`;
   pnlEl.style.color = totalPnlUsd >= 0 ? GREEN : RED;
 
+  lastPricedHoldings = priced;
+  renderPortfolioAlert();
+
   priced.sort((a, b) => b.price * b.holding.quantity - a.price * a.holding.quantity);
   container.innerHTML = "";
   priced.forEach((p) => container.appendChild(holdingRowEl(p, totalValue)));
@@ -171,6 +251,8 @@ function openTradeModal(side) {
   document.getElementById("trade-symbol-input").value = "";
   document.getElementById("trade-usd-input").value = "";
   document.getElementById("trade-crypto-input").value = "";
+  document.getElementById("trade-stoploss-input").value = "";
+  document.getElementById("trade-stoploss-field").style.display = side === "BUY" ? "block" : "none";
   document.getElementById("trade-selected-info").textContent = "";
   document.getElementById("trade-error").style.display = "none";
   hideTradeSuggestions();
@@ -234,6 +316,11 @@ async function selectTradeSymbol(symbol) {
     tradeState.entry = entry;
     tradeState.price = candles[candles.length - 1].close;
     document.getElementById("trade-selected-info").textContent = `${symbol} — cours actuel : ${formatPrice(tradeState.price)} $`;
+
+    if (tradeState.side === "BUY") {
+      const { nearestSupport } = nearestPair(analyzeSymbol(candles), tradeState.price);
+      document.getElementById("trade-stoploss-input").value = nearestSupport ? nearestSupport.price : "";
+    }
   } catch (e) {
     document.getElementById("trade-selected-info").textContent = `Erreur: ${e.message}`;
   }
@@ -273,7 +360,13 @@ function confirmTrade() {
     }
   }
 
-  executeTrade(symbol, tradeState.side, usdAmount, cryptoAmount, tradeState.price);
+  let stopLoss = null;
+  if (tradeState.side === "BUY") {
+    const stopLossVal = parseFloat(document.getElementById("trade-stoploss-input").value);
+    stopLoss = isNaN(stopLossVal) ? null : stopLossVal;
+  }
+
+  executeTrade(symbol, tradeState.side, usdAmount, cryptoAmount, tradeState.price, stopLoss);
   closeTradeModal();
   renderPortfolioPage();
 }
