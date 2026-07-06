@@ -497,6 +497,11 @@ main {
   margin: 2px 0 0;
 }
 
+.holding-levels {
+  padding: 0 14px 12px;
+  border-top: 1px solid #F1EFE8;
+}
+
 .holding-history {
   border-top: 1px solid #F1EFE8;
   padding: 8px 14px 12px;

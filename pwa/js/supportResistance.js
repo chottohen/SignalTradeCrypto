@@ -1,9 +1,8 @@
 // Port de support_resistance.py
-// Note v1: contrairement a la version Python (fenetres separees 12 mois /
-// 5 ans via des fetchs historiques distincts), l'app mobile calcule les deux
-// horizons sur la meme fenetre de 250 jours pour limiter le volume de
-// donnees telecharge sur le telephone. Les niveaux "long terme" seront donc
-// moins profonds que sur la version desktop.
+// Chaque horizon (court/moyen/long terme) utilise sa propre granularite de
+// bougies (4h / journalier / mensuel-15j), voir CONFIG.srHorizons et
+// buildHorizonData() dans app.js pour la construction des donnees par
+// horizon avant l'appel a analyzeSymbol().
 
 function swingPoints(candles, window) {
   const closes = candles.map((c) => c.close);
@@ -51,20 +50,29 @@ function findLevels(candles, window, horizon, tolerancePct = CONFIG.srToleranceP
   return [...resistances, ...supports].sort((a, b) => a.price - b.price);
 }
 
-function analyzeSymbol(candles) {
-  const currentPrice = candles[candles.length - 1].close;
-  const mediumLevels = findLevels(candles, CONFIG.srMediumTermWindow, "moyen_terme");
-  const longLevels = findLevels(candles, CONFIG.srLongTermWindow, "long_terme");
-  const all = [...mediumLevels, ...longLevels];
+// horizonData: { court_terme?: {candles, window}, moyen_terme?: {candles,
+// window}, long_terme?: {candles, window} } - seuls les horizons realises
+// fournis les fournis (voir HORIZON_SETS/buildHorizonData dans app.js: un
+// meme actif peut n'avoir que le long terme calcule, ou les 3, selon la
+// vue qui en a besoin).
+function analyzeSymbol(currentPrice, horizonData) {
+  const horizonKeys = Object.keys(horizonData);
+  let all = [];
+  for (const horizon of horizonKeys) {
+    const data = horizonData[horizon];
+    if (!data || !data.candles || data.candles.length === 0) continue;
+    all = all.concat(findLevels(data.candles, data.window, horizon));
+  }
 
+  const maxPerSide = CONFIG.srLevelsPerSide * Math.max(horizonKeys.length, 1);
   const support = all
     .filter((l) => l.kind === "support" && l.price < currentPrice)
     .sort((a, b) => a.price - b.price)
-    .slice(-CONFIG.srLevelsPerSide * 2);
+    .slice(-maxPerSide);
   const resistance = all
     .filter((l) => l.kind === "resistance" && l.price > currentPrice)
     .sort((a, b) => a.price - b.price)
-    .slice(0, CONFIG.srLevelsPerSide * 2);
+    .slice(0, maxPerSide);
 
   return { support, resistance };
 }

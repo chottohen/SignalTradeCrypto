@@ -323,7 +323,46 @@ function buyScore(entry) {
   return categoryScore * 100 + confluenceNet * 10 + result.adx * 0.1;
 }
 
-async function processSymbol(watchlistEntry) {
+// Quels horizons de support/resistance calculer selon le contexte d'appel:
+// - "long": vues de masse ou seul le long terme compte (Top 10, Favoris,
+//   Portefeuille) - une requete supplementaire par actif, mais ce sont de
+//   petites listes.
+// - "medium": listes achat/vente (balayage du top 500) - aucune requete
+//   supplementaire, le moyen terme est tranche depuis l'historique
+//   journalier deja charge pour les indicateurs.
+// - "all": actions ponctuelles sur un seul actif (recherche, formulaire
+//   d'achat) - le cout des 2 requetes en plus est negligeable a cette
+//   echelle.
+const HORIZON_SETS = {
+  long: ["long_terme"],
+  medium: ["moyen_terme"],
+  all: ["court_terme", "moyen_terme", "long_terme"],
+};
+
+async function buildHorizonData(watchlistEntry, dailyCandles, horizonKeys) {
+  const horizonData = {};
+  const fetches = [];
+
+  for (const horizon of horizonKeys) {
+    if (horizon === "moyen_terme") {
+      const cfg = CONFIG.srHorizons.moyen_terme;
+      horizonData.moyen_terme = { candles: dailyCandles.slice(-cfg.candles), window: cfg.window };
+      continue;
+    }
+    fetches.push(
+      fetchHorizonCandles(watchlistEntry, horizon)
+        .then((candles) => {
+          horizonData[horizon] = { candles, window: horizonWindowFor(watchlistEntry, horizon) };
+        })
+        .catch((e) => console.error(`${watchlistEntry.symbol} ${horizon}`, e))
+    );
+  }
+
+  await Promise.all(fetches);
+  return horizonData;
+}
+
+async function processSymbol(watchlistEntry, horizonSet = "medium") {
   const candles = await fetchCandles(watchlistEntry);
   if (candles.length <= CONFIG.warmupPeriod) return null;
 
@@ -336,8 +375,10 @@ async function processSymbol(watchlistEntry) {
   const data = computeIndicators(candles);
   const trendAlert = detectTrendReversalAt(data, data.length - 1);
   const supertrend = supertrendStatus(candles);
-  const levels = analyzeSymbol(candles);
   const variations = computeVariations(candles);
+
+  const horizonData = await buildHorizonData(watchlistEntry, candles, HORIZON_SETS[horizonSet] || HORIZON_SETS.medium);
+  const levels = analyzeSymbol(result.close, horizonData);
 
   return { result, trendAlert, supertrend, levels, variations };
 }
@@ -364,7 +405,7 @@ async function loadApp() {
   for (const watchlistEntry of watchlist) {
     setStatus(`Chargement… (${done + 1}/${watchlist.length}) ${watchlistEntry.symbol}`);
     try {
-      const entry = await processSymbol(watchlistEntry);
+      const entry = await processSymbol(watchlistEntry, "long");
       if (!entry) continue;
 
       if (!btcPowerLawRendered && watchlistEntry.symbol === "BTC") {
@@ -413,7 +454,7 @@ async function ensureFavoriteEntries() {
   const results = [];
   for (const watchlistEntry of favWatchlist) {
     try {
-      const entry = await processSymbol(watchlistEntry);
+      const entry = await processSymbol(watchlistEntry, "long");
       if (entry) results.push(entry);
     } catch (e) {
       console.error(watchlistEntry.symbol, e);
@@ -461,7 +502,7 @@ async function ensureRankedEntries() {
       const batchResults = await Promise.all(
         batch.map(async (watchlistEntry) => {
           try {
-            return await processSymbol(watchlistEntry);
+            return await processSymbol(watchlistEntry, "medium");
           } catch (e) {
             console.error(watchlistEntry.symbol, e);
             return null;
@@ -576,7 +617,7 @@ async function selectSearchSymbol(watchlistEntry) {
   setStatus(`Chargement de ${display}…`);
   document.getElementById("cards").innerHTML = "";
   try {
-    const entry = await processSymbol(watchlistEntry);
+    const entry = await processSymbol(watchlistEntry, "all");
     if (entry) {
       renderCards([entry]);
       setStatus(`Résultat pour ${display}`);

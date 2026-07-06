@@ -103,7 +103,7 @@ function renderPortfolioAlert() {
 }
 
 function holdingRowEl(priced, totalValue) {
-  const { symbol, price, holding } = priced;
+  const { symbol, price, holding, levels } = priced;
   const valueUsd = price * holding.quantity;
   const pnlUsd = valueUsd - holding.costBasisUsd;
   const pnlPct = holding.costBasisUsd > 0 ? (pnlUsd / holding.costBasisUsd) * 100 : 0;
@@ -122,15 +122,30 @@ function holdingRowEl(priced, totalValue) {
     ]),
   ]);
 
+  const children = [row];
+
+  if (levels) {
+    const { nearestSupport, nearestResistance } = nearestPair(levels, price);
+    if (nearestSupport || nearestResistance) {
+      children.push(
+        el("div", { class: "holding-levels" }, [
+          levelBlock("Résistance (long terme)", nearestResistance, price, null, false),
+          levelBlock("Support (long terme)", nearestSupport, price, null, true),
+        ])
+      );
+    }
+  }
+
   const history = el("div", { class: "holding-history", style: "display:none;" });
   renderHistoryFor(symbol, history, price);
+  children.push(history);
 
   row.addEventListener("click", () => {
     const visible = history.style.display !== "none";
     history.style.display = visible ? "none" : "block";
   });
 
-  return el("div", { class: "holding-wrapper" }, [row, history]);
+  return el("div", { class: "holding-wrapper" }, children);
 }
 
 const STOP_LOSS_BADGE_LABEL = { red: "Stop atteint", orange: "Stop proche", green: "Stop loin" };
@@ -215,7 +230,10 @@ async function renderPortfolioPage() {
     if (!entry) continue; // plus de source de prix disponible pour cet actif
     try {
       const candles = await fetchCandles(entry);
-      priced.push({ symbol, price: candles[candles.length - 1].close, holding: portfolio.holdings[symbol] });
+      const price = candles[candles.length - 1].close;
+      const horizonData = await buildHorizonData(entry, candles, HORIZON_SETS.long);
+      const levels = analyzeSymbol(price, horizonData);
+      priced.push({ symbol, price, holding: portfolio.holdings[symbol], levels });
     } catch (e) {
       console.error(symbol, e);
     }
@@ -318,7 +336,8 @@ async function selectTradeSymbol(symbol) {
     document.getElementById("trade-selected-info").textContent = `${symbol} — cours actuel : ${formatPrice(tradeState.price)} $`;
 
     if (tradeState.side === "BUY") {
-      const { nearestSupport } = nearestPair(analyzeSymbol(candles), tradeState.price);
+      const horizonData = await buildHorizonData(entry, candles, HORIZON_SETS.all);
+      const { nearestSupport } = nearestPair(analyzeSymbol(tradeState.price, horizonData), tradeState.price);
       document.getElementById("trade-stoploss-input").value = nearestSupport ? nearestSupport.price : "";
     }
   } catch (e) {

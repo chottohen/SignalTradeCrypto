@@ -29,8 +29,26 @@ const CONFIG = {
 
   srTolerancePct: 0.02,
   srLevelsPerSide: 2,
-  srMediumTermWindow: 5,
-  srLongTermWindow: 15,
+
+  // Une granularite de bougies dediee par horizon plutot qu'une seule
+  // fenetre journaliere tranchee en trois: plus juste (un support long
+  // terme n'a pas de sens lu sur un graphique journalier) et ca evite le
+  // plafond de l'API Kraken (~720 bougies journalieres max, insuffisant
+  // pour 5 ans). "moyen_terme" n'a pas de champ interval/candles: il est
+  // obtenu en tranchant l'historique journalier deja charge pour les
+  // indicateurs, sans requete dediee.
+  srHorizons: {
+    court_terme: { interval: "4h", candles: 84, window: 3 }, // 2 semaines
+    moyen_terme: { candles: 90, window: 5 }, // 3 mois, tranche du journalier existant
+    long_terme: {
+      interval: "1M",
+      candles: 60, // 5 ans en mensuel (Binance/Hyperliquid)
+      window: 2,
+      krakenInterval: "15d", // Kraken ne supporte pas le mensuel calendaire
+      krakenCandles: 121, // 5 ans en bougies de 15 jours
+      krakenWindow: 4,
+    },
+  },
 
   supertrendPeriod: 10,
   supertrendMultiplier: 2.0,

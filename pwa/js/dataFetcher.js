@@ -170,8 +170,25 @@ async function fetchBinanceKlines(pair, interval = CONFIG.timeframe, limit = CON
   }));
 }
 
+// Duree approximative de chaque intervalle, pour calculer le startTime a
+// envoyer a Hyperliquid (candleSnapshot prend une plage de dates, pas un
+// nombre de bougies). "1M" n'a pas de duree fixe (28-31 jours): on prend une
+// approximation large, Hyperliquid renvoie simplement ce qui existe dans la
+// plage donc un depassement leger ne pose pas de probleme.
+const INTERVAL_DURATION_MS = {
+  "4h": 4 * 3600 * 1000,
+  "1d": 24 * 3600 * 1000,
+  "1w": 7 * 24 * 3600 * 1000,
+  "1M": 31 * 24 * 3600 * 1000,
+};
+
+// Kraken exprime l'intervalle en minutes et n'a pas de granularite
+// mensuelle calendaire: "15d" (21600 min) est utilise a la place pour
+// l'horizon long terme sur les actifs servis par Kraken.
+const KRAKEN_INTERVAL_MINUTES = { "4h": 240, "1d": 1440, "1w": 10080, "15d": 21600 };
+
 async function fetchHyperliquidKlines(coin, interval = "1d", limit = CONFIG.candlesHistory) {
-  const intervalMs = 24 * 3600 * 1000; // seul "1d" est utilise ici
+  const intervalMs = INTERVAL_DURATION_MS[interval] || INTERVAL_DURATION_MS["1d"];
   const endTime = Date.now();
   const startTime = endTime - limit * intervalMs;
   const resp = await fetch("https://api.hyperliquid.xyz/info", {
@@ -191,8 +208,9 @@ async function fetchHyperliquidKlines(coin, interval = "1d", limit = CONFIG.cand
   }));
 }
 
-async function fetchKrakenKlines(pairAltname, limit = CONFIG.candlesHistory) {
-  const resp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pairAltname}&interval=1440`);
+async function fetchKrakenKlines(pairAltname, intervalCode = "1d", limit = CONFIG.candlesHistory) {
+  const krakenInterval = KRAKEN_INTERVAL_MINUTES[intervalCode] || KRAKEN_INTERVAL_MINUTES["1d"];
+  const resp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pairAltname}&interval=${krakenInterval}`);
   if (!resp.ok) throw new Error(`Kraken OHLC ${pairAltname}: HTTP ${resp.status}`);
   const data = await resp.json();
   if (data.error && data.error.length) throw new Error(`Kraken OHLC ${pairAltname}: ${data.error.join(", ")}`);
@@ -214,6 +232,27 @@ async function fetchCandles(entry) {
   if (entry.venue === "hyperliquid") return fetchHyperliquidKlines(entry.pair);
   if (entry.venue === "kraken") return fetchKrakenKlines(entry.pair);
   return fetchBinanceKlines(entry.pair);
+}
+
+// Bougies dediees a un horizon de support/resistance (court/long terme).
+// "moyen_terme" n'a pas d'entree ici: il est obtenu en tranchant
+// l'historique journalier deja recupere par fetchCandles(), sans requete
+// supplementaire (voir buildHorizonData dans app.js).
+function horizonWindowFor(entry, horizonKey) {
+  const cfg = CONFIG.srHorizons[horizonKey];
+  const useKrakenOverride = entry.venue === "kraken" && cfg.krakenInterval;
+  return useKrakenOverride ? cfg.krakenWindow : cfg.window;
+}
+
+async function fetchHorizonCandles(entry, horizonKey) {
+  const cfg = CONFIG.srHorizons[horizonKey];
+  const useKrakenOverride = entry.venue === "kraken" && cfg.krakenInterval;
+  const interval = useKrakenOverride ? cfg.krakenInterval : cfg.interval;
+  const limit = useKrakenOverride ? cfg.krakenCandles : cfg.candles;
+
+  if (entry.venue === "hyperliquid") return fetchHyperliquidKlines(entry.pair, interval, limit);
+  if (entry.venue === "kraken") return fetchKrakenKlines(entry.pair, interval, limit);
+  return fetchBinanceKlines(entry.pair, interval, limit);
 }
 
 async function fetchFundamentals() {
