@@ -47,3 +47,10 @@ const POWER_LAW_PARAMS = {
   residualMax: 2.785386456005281,
   genesisDate: Date.UTC(2009, 0, 3),
 };
+
+// Sauvegarde optionnelle sur Google Drive (dossier prive appDataFolder).
+// Client ID public (pas un secret: les apps OAuth "installees/SPA" exposent
+// toujours leur client_id cote client, la securite vient du domaine
+// autorise configure sur ce client dans Google Cloud Console).
+const GOOGLE_CLIENT_ID = "334461656685-u94romlkpcr3d76i5f1e7g5b7jhdg1sk.apps.googleusercontent.com";
+const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";

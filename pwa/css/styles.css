@@ -392,6 +392,34 @@ main {
 
 /* --- Portefeuille --- */
 
+.drive-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.drive-btn {
+  background: #FFFFFF;
+  border: 1px solid #E3E1D8;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #2C2C2A;
+}
+.drive-btn.primary {
+  background: #EAF3DE;
+  border-color: #3B6D11;
+  color: #173404;
+  font-weight: 600;
+}
+.drive-status {
+  font-size: 11px;
+  color: #5F5E5A;
+  margin: 0;
+  flex: 1 1 100%;
+}
+
 .portfolio-summary {
   background: #FFFFFF;
   border: 1px solid #E3E1D8;

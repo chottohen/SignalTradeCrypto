@@ -42,6 +42,12 @@
     <div id="cards"></div>
   </div>
   <div id="portfolio-page" style="display:none;">
+    <div class="drive-sync">
+      <button id="drive-connect-btn" class="drive-btn primary" type="button">Connecter Google Drive</button>
+      <button id="drive-save-btn" class="drive-btn" type="button" style="display:none;">Sauvegarder</button>
+      <button id="drive-restore-btn" class="drive-btn" type="button" style="display:none;">Restaurer</button>
+      <p id="drive-status" class="drive-status"></p>
+    </div>
     <div class="portfolio-summary">
       <p class="portfolio-value" id="portfolio-total-value">—</p>
       <p class="portfolio-pnl" id="portfolio-total-pnl"></p>
@@ -89,6 +95,7 @@
   </div>
 </div>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/config.js"></script>
 <script src="js/formatting.js"></script>
 <script src="js/indicators.js"></script>
@@ -103,5 +110,6 @@
 <script src="js/dataFetcher.js"></script>
 <script src="js/app.js"></script>
 <script src="js/portfolio.js"></script>
+<script src="js/driveSync.js"></script>
 </body>
 </html>
