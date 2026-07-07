@@ -655,6 +655,40 @@ function switchPage(page) {
   if (page === "portfolio") renderPortfolioPage();
 }
 
+// --- Menu et notices d'aide ---
+
+const INFO_CONTENT = {
+  levels: {
+    title: "Détection des niveaux",
+    bodyHtml: `
+      <p>Un niveau de support ou de résistance est repéré sur les <strong>clôtures</strong> des bougies (jamais les mèches, pour éviter les faux niveaux causés par une mèche de flash crash). Les pivots trouvés à moins de 2% les uns des autres sont regroupés en un seul niveau.</p>
+      <h3>Trois horizons, trois granularités</h3>
+      <ul>
+        <li><strong>Court terme</strong> : 2 semaines, bougies de 4h</li>
+        <li><strong>Moyen terme</strong> : 3 mois, bougies journalières</li>
+        <li><strong>Long terme</strong> : 5 ans, bougies mensuelles (15 jours pour les actifs servis par Kraken, qui n'a pas de granularité mensuelle)</li>
+      </ul>
+      <h3>Où chaque horizon est utilisé</h3>
+      <ul>
+        <li><strong>Top 10, Favoris, Portefeuille</strong> : long terme seul</li>
+        <li><strong>Listes Achat / Vente</strong> : moyen terme seul (aucune requête réseau supplémentaire)</li>
+        <li><strong>Recherche, formulaire Achat/Vente</strong> : les 3 horizons combinés</li>
+      </ul>
+    `,
+  },
+};
+
+function openInfoModal(key) {
+  const content = INFO_CONTENT[key];
+  document.getElementById("info-modal-title").textContent = content.title;
+  document.getElementById("info-modal-body").innerHTML = content.bodyHtml;
+  document.getElementById("info-modal").style.display = "flex";
+}
+
+function closeInfoModal() {
+  document.getElementById("info-modal").style.display = "none";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
   document.getElementById("tab-market-btn").addEventListener("click", () => switchPage("market"));
@@ -715,6 +749,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".search-wrap")) hideSuggestions();
+    if (!e.target.closest(".menu-wrap")) document.getElementById("menu-dropdown").style.display = "none";
+  });
+
+  document.getElementById("menu-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const dropdown = document.getElementById("menu-dropdown");
+    dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
+  });
+  document.getElementById("menu-item-levels").addEventListener("click", () => {
+    document.getElementById("menu-dropdown").style.display = "none";
+    openInfoModal("levels");
+  });
+  document.getElementById("info-close-btn").addEventListener("click", closeInfoModal);
+  document.getElementById("info-modal").addEventListener("click", (e) => {
+    if (e.target.id === "info-modal") closeInfoModal();
   });
 
   if ("serviceWorker" in navigator) {

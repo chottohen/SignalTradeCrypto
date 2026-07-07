@@ -13,6 +13,12 @@
 <body>
 <header>
   <div class="header-top">
+    <div class="menu-wrap">
+      <button id="menu-btn" class="menu-btn" type="button" aria-label="Menu">☰</button>
+      <div id="menu-dropdown" class="menu-dropdown" style="display:none;">
+        <button id="menu-item-levels" class="menu-item" type="button">Détection des niveaux</button>
+      </div>
+    </div>
     <h1>SignalTrade</h1>
     <button id="refresh-btn">Actualiser</button>
   </div>
@@ -92,6 +98,16 @@
     <div class="trade-modal-buttons">
       <button id="trade-cancel-btn" class="trade-modal-btn cancel" type="button">Annuler</button>
       <button id="trade-confirm-btn" class="trade-modal-btn confirm" type="button">Valider</button>
+    </div>
+  </div>
+</div>
+
+<div id="info-modal" class="trade-modal" style="display:none;">
+  <div class="trade-modal-content">
+    <h2 id="info-modal-title">Détection des niveaux</h2>
+    <div id="info-modal-body" class="info-modal-body"></div>
+    <div class="trade-modal-buttons">
+      <button id="info-close-btn" class="trade-modal-btn cancel" type="button">Fermer</button>
     </div>
   </div>
 </div>
