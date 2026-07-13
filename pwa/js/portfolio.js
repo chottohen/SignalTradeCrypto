@@ -66,6 +66,40 @@ function stopLossStatus(currentPrice, stopLoss) {
   return distancePct < 5 ? "orange" : "green";
 }
 
+// Notification navigateur locale (pas de push, pas de serveur): declenchee
+// uniquement quand la severite d'une ligne d'achat empire (vert -> orange
+// -> rouge) par rapport a la derniere notification envoyee pour cette
+// transaction, pour ne pas spammer a chaque rafraichissement tant que la
+// situation ne change pas. L'etat est persiste pour survivre aux reloads.
+const NOTIFIED_ALERTS_KEY = "signaltrade_notified_alerts_v1";
+const STOP_LOSS_SEVERITY = { green: 0, orange: 1, red: 2 };
+
+function loadNotifiedAlerts() {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIFIED_ALERTS_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+let notifiedAlerts = loadNotifiedAlerts();
+
+function maybeNotify(tx, symbol, status) {
+  const severity = STOP_LOSS_SEVERITY[status] ?? -1;
+  const prevSeverity = notifiedAlerts[tx.id] ?? -1;
+
+  if (status !== "green" && severity > prevSeverity && "Notification" in window && Notification.permission === "granted") {
+    const title = status === "red" ? `Stop-loss atteint : ${symbol}` : `Stop-loss proche : ${symbol}`;
+    const body =
+      status === "red"
+        ? `Le cours de ${symbol} est passé sous votre stop-loss (${formatPrice(tx.stopLoss)} $).`
+        : `Le cours de ${symbol} approche de votre stop-loss (${formatPrice(tx.stopLoss)} $, moins de 5% d'écart).`;
+    new Notification(title, { body, tag: tx.id });
+  }
+
+  notifiedAlerts[tx.id] = severity;
+  localStorage.setItem(NOTIFIED_ALERTS_KEY, JSON.stringify(notifiedAlerts));
+}
+
 function computeStopLossAlerts(priced) {
   let redCount = 0;
   let orangeCount = 0;
@@ -76,12 +110,27 @@ function computeStopLossAlerts(priced) {
         const status = stopLossStatus(p.price, t.stopLoss);
         if (status === "red") redCount++;
         else if (status === "orange") orangeCount++;
+        maybeNotify(t, p.symbol, status);
       });
   });
   return { redCount, orangeCount };
 }
 
-// Snapshot des derniers prix recuperes par renderPortfolioPage(), reutilise
+function updateTabBadge(redCount, orangeCount) {
+  const badge = document.getElementById("portfolio-tab-badge");
+  if (redCount > 0) {
+    badge.className = "tab-badge red";
+    badge.style.display = "inline-block";
+  } else if (orangeCount > 0) {
+    badge.className = "tab-badge orange";
+    badge.style.display = "inline-block";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+// Snapshot des derniers prix recuperes par renderPortfolioPage() (ou par le
+// controle en arriere-plan checkPortfolioAlertsInBackground()), reutilise
 // pour rafraichir l'alerte instantanement apres l'edition d'un stop-loss
 // dans l'historique, sans re-telecharger les cours.
 let lastPricedHoldings = [];
@@ -90,6 +139,7 @@ function renderPortfolioAlert() {
   const container = document.getElementById("portfolio-alert");
   container.innerHTML = "";
   const { redCount, orangeCount } = computeStopLossAlerts(lastPricedHoldings);
+  updateTabBadge(redCount, orangeCount);
   if (redCount === 0 && orangeCount === 0) return;
 
   const parts = [];
@@ -100,6 +150,56 @@ function renderPortfolioAlert() {
   container.appendChild(
     el("div", { class: "alert-box", style: `background:${bg};color:${color};`, textContent: `⚠ ${parts.join(" · ")}` })
   );
+}
+
+// Verifie les stop-loss sans se soucier de la page active, pour que le
+// badge sur l'onglet Portefeuille (et les notifications) fonctionnent meme
+// si l'utilisateur reste sur l'onglet Marche pendant toute la session.
+async function checkPortfolioAlertsInBackground() {
+  const symbols = Object.keys(portfolio.holdings);
+  if (symbols.length === 0) {
+    updateTabBadge(0, 0);
+    return;
+  }
+  try {
+    const universe = await getSearchUniverse();
+    const bySymbol = new Map(universe.map((e) => [e.symbol, e]));
+    const priced = [];
+    for (const symbol of symbols) {
+      const entry = bySymbol.get(symbol);
+      if (!entry) continue;
+      try {
+        const candles = await fetchCandles(entry);
+        priced.push({ symbol, price: candles[candles.length - 1].close, holding: portfolio.holdings[symbol] });
+      } catch (e) {
+        console.error(symbol, e);
+      }
+    }
+    lastPricedHoldings = priced;
+    renderPortfolioAlert();
+  } catch (e) {
+    console.error("checkPortfolioAlertsInBackground", e);
+  }
+}
+
+function updateNotifStatusUi() {
+  const btn = document.getElementById("notif-enable-btn");
+  const status = document.getElementById("notif-status");
+  if (!("Notification" in window)) {
+    btn.style.display = "none";
+    status.textContent = "Notifications non prises en charge par ce navigateur.";
+    return;
+  }
+  if (Notification.permission === "granted") {
+    btn.style.display = "none";
+    status.textContent = "Alertes stop-loss activées.";
+  } else if (Notification.permission === "denied") {
+    btn.style.display = "none";
+    status.textContent = "Notifications bloquées (à réactiver dans les réglages du navigateur).";
+  } else {
+    btn.style.display = "inline-block";
+    status.textContent = "";
+  }
 }
 
 function holdingRowEl(priced, totalValue) {
@@ -430,6 +530,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-sell").addEventListener("click", () => openTradeModal("SELL"));
   document.getElementById("trade-cancel-btn").addEventListener("click", closeTradeModal);
   document.getElementById("trade-confirm-btn").addEventListener("click", confirmTrade);
+
+  updateNotifStatusUi();
+  document.getElementById("notif-enable-btn").addEventListener("click", async () => {
+    await Notification.requestPermission();
+    updateNotifStatusUi();
+  });
 
   const symbolInput = document.getElementById("trade-symbol-input");
   symbolInput.addEventListener("input", (e) => {

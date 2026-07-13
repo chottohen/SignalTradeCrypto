@@ -691,6 +691,7 @@ function closeInfoModal() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
+  checkPortfolioAlertsInBackground();
   document.getElementById("tab-market-btn").addEventListener("click", () => switchPage("market"));
   document.getElementById("tab-portfolio-btn").addEventListener("click", () => switchPage("portfolio"));
 

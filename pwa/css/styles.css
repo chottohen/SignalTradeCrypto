@@ -217,6 +217,21 @@ h1 {
   border-bottom-color: #3B6D11;
 }
 
+.tab-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+.tab-badge.red {
+  background: #A32D2D;
+}
+.tab-badge.orange {
+  background: #854F0B;
+}
+
 .macro-row {
   display: flex;
   gap: 8px;
