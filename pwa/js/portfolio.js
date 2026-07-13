@@ -388,20 +388,30 @@ function confirmTrade() {
     return;
   }
 
+  // Tolerance sur les comparaisons: le curseur/champ quantite affiche des
+  // valeurs arrondies (toFixed), qui peuvent depasser de quelques unites
+  // au 9e chiffre apres la virgule la valeur exacte stockee (ex: curseur a
+  // 100% d'une position) sans que ce soit un vrai depassement.
+  const EPSILON = 1e-8;
   const symbol = tradeState.entry.symbol;
+  let finalCryptoAmount = cryptoAmount;
+
   if (tradeState.side === "BUY") {
-    if (usdAmount > portfolio.cashUsd) {
+    if (usdAmount > portfolio.cashUsd + EPSILON) {
       errorEl.textContent = `Montant supérieur au cash disponible (${formatPrice(portfolio.cashUsd)} $).`;
       errorEl.style.display = "block";
       return;
     }
   } else {
     const held = portfolio.holdings[symbol];
-    if (!held || cryptoAmount > held.quantity) {
+    if (!held || cryptoAmount > held.quantity + EPSILON) {
       errorEl.textContent = `Quantité supérieure à la position détenue (${held ? formatPrice(held.quantity) : 0} ${symbol}).`;
       errorEl.style.display = "block";
       return;
     }
+    // Ne jamais vendre plus que ce qui est reellement detenu (curseur a
+    // 100% doit clore la position exactement, sans reliquat de poussiere).
+    finalCryptoAmount = Math.min(cryptoAmount, held.quantity);
   }
 
   let stopLoss = null;
@@ -410,7 +420,7 @@ function confirmTrade() {
     stopLoss = isNaN(stopLossVal) ? null : stopLossVal;
   }
 
-  executeTrade(symbol, tradeState.side, usdAmount, cryptoAmount, tradeState.price, stopLoss);
+  executeTrade(symbol, tradeState.side, usdAmount, finalCryptoAmount, tradeState.price, stopLoss);
   closeTradeModal();
   renderPortfolioPage();
 }
