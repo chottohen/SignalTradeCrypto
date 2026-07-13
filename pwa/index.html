@@ -90,6 +90,10 @@
       <span>Quantité</span>
       <input type="number" id="trade-crypto-input" inputmode="decimal" min="0" step="any">
     </label>
+    <label class="trade-field" id="trade-percent-field" style="display:none;">
+      <span>Part de la position à vendre (<span id="trade-percent-value">0</span>%)</span>
+      <input type="range" id="trade-percent-input" min="0" max="100" step="1" value="0">
+    </label>
     <label class="trade-field" id="trade-stoploss-field" style="display:none;">
       <span>Stop-loss indicatif (USD)</span>
       <input type="number" id="trade-stoploss-input" inputmode="decimal" min="0" step="any">

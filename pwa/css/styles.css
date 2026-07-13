@@ -714,6 +714,13 @@ main {
   outline: none;
   border-color: #3B6D11;
 }
+.trade-field input[type="range"] {
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: #3B6D11;
+}
 .trade-error {
   background: #FCEBEB;
   color: #501313;

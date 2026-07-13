@@ -261,16 +261,19 @@ async function renderPortfolioPage() {
 
 // --- Formulaire d'achat/vente ---
 
-let tradeState = { side: null, entry: null, price: null };
+let tradeState = { side: null, entry: null, price: null, heldQuantity: 0 };
 
 function openTradeModal(side) {
-  tradeState = { side, entry: null, price: null };
+  tradeState = { side, entry: null, price: null, heldQuantity: 0 };
   document.getElementById("trade-modal-title").textContent = side === "BUY" ? "Achat" : "Vente";
   document.getElementById("trade-symbol-input").value = "";
   document.getElementById("trade-usd-input").value = "";
   document.getElementById("trade-crypto-input").value = "";
   document.getElementById("trade-stoploss-input").value = "";
   document.getElementById("trade-stoploss-field").style.display = side === "BUY" ? "block" : "none";
+  document.getElementById("trade-percent-field").style.display = side === "SELL" ? "block" : "none";
+  document.getElementById("trade-percent-input").value = 0;
+  document.getElementById("trade-percent-value").textContent = "0";
   document.getElementById("trade-selected-info").textContent = "";
   document.getElementById("trade-levels-info").innerHTML = "";
   document.getElementById("trade-error").style.display = "none";
@@ -356,6 +359,11 @@ async function selectTradeSymbol(symbol) {
 
     if (tradeState.side === "BUY") {
       document.getElementById("trade-stoploss-input").value = nearestSupport ? nearestSupport.price : "";
+    } else {
+      const held = portfolio.holdings[symbol];
+      tradeState.heldQuantity = held ? held.quantity : 0;
+      document.getElementById("trade-percent-input").value = 0;
+      document.getElementById("trade-percent-value").textContent = "0";
     }
   } catch (e) {
     document.getElementById("trade-selected-info").textContent = `Erreur: ${e.message}`;
@@ -426,15 +434,35 @@ document.addEventListener("DOMContentLoaded", () => {
     showTradeSuggestions(query);
   });
 
+  function syncPercentFromQuantity(qty) {
+    if (tradeState.side !== "SELL" || !tradeState.heldQuantity) return;
+    const pct = isNaN(qty) ? 0 : Math.min(100, Math.max(0, (qty / tradeState.heldQuantity) * 100));
+    document.getElementById("trade-percent-input").value = pct;
+    document.getElementById("trade-percent-value").textContent = pct.toFixed(0);
+  }
+
   document.getElementById("trade-usd-input").addEventListener("input", (e) => {
     if (!tradeState.price) return;
     const usd = parseFloat(e.target.value);
-    if (!isNaN(usd)) document.getElementById("trade-crypto-input").value = (usd / tradeState.price).toFixed(8);
+    if (!isNaN(usd)) {
+      const qty = usd / tradeState.price;
+      document.getElementById("trade-crypto-input").value = qty.toFixed(8);
+      syncPercentFromQuantity(qty);
+    }
   });
   document.getElementById("trade-crypto-input").addEventListener("input", (e) => {
     if (!tradeState.price) return;
     const qty = parseFloat(e.target.value);
     if (!isNaN(qty)) document.getElementById("trade-usd-input").value = (qty * tradeState.price).toFixed(2);
+    syncPercentFromQuantity(qty);
+  });
+  document.getElementById("trade-percent-input").addEventListener("input", (e) => {
+    if (tradeState.side !== "SELL" || !tradeState.heldQuantity || !tradeState.price) return;
+    const pct = parseFloat(e.target.value);
+    document.getElementById("trade-percent-value").textContent = pct.toFixed(0);
+    const qty = tradeState.heldQuantity * (pct / 100);
+    document.getElementById("trade-crypto-input").value = qty.toFixed(8);
+    document.getElementById("trade-usd-input").value = (qty * tradeState.price).toFixed(2);
   });
 
   document.getElementById("trade-modal").addEventListener("click", (e) => {
