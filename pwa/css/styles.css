@@ -380,6 +380,13 @@ main {
   margin: 0 0 8px;
 }
 
+.cross-proximity-tag {
+  display: block;
+  font-size: 12px;
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
 .alert-box {
   border-radius: 8px;
   padding: 8px 10px;
@@ -471,6 +478,19 @@ main {
   color: #5F5E5A;
   margin: 0;
   flex: 1 1 100%;
+}
+
+.notif-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: #5F5E5A;
+  line-height: 1.4;
+}
+.notif-checkbox-label input {
+  margin-top: 2px;
+  flex: 0 0 auto;
 }
 
 .portfolio-summary {

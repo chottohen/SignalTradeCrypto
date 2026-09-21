@@ -93,6 +93,19 @@ function supertrendEl(status) {
   });
 }
 
+function crossProximityEl(cp) {
+  if (!cp) return null;
+  const label = cp.pendingType === "golden" ? "Golden cross" : "Death cross";
+  const levelLabel = cp.level === "imminent" ? "imminent" : "en approche";
+  const color = cp.level === "imminent" ? RED : AMBER;
+  const sign = cp.gapPct >= 0 ? "+" : "";
+  return el("p", {
+    class: "cross-proximity-tag",
+    style: `color:${color};`,
+    textContent: `⚠ ${label} ${levelLabel} (écart MM50/MM200 : ${sign}${cp.gapPct.toFixed(1)}%)`,
+  });
+}
+
 function starEl(symbol) {
   const fav = isFavorite(symbol);
   const btn = el("button", {
@@ -130,7 +143,7 @@ function chartLinkEl(symbol) {
 }
 
 function cardEl(entry) {
-  const { result, trendAlert, levels, variations, supertrend } = entry;
+  const { result, trendAlert, levels, variations, supertrend, crossProximity } = entry;
   const { label: displayLabel, watchLevel } = resolveDisplayLabel(result.signal, result.close, levels);
   const { nearestSupport, nearestResistance } = nearestPair(levels, result.close);
 
@@ -156,7 +169,7 @@ function cardEl(entry) {
     variationCell("30 jours", variations.d30),
   ]);
 
-  const children = [header, rationale, supertrendEl(supertrend)];
+  const children = [header, rationale, crossProximityEl(crossProximity), supertrendEl(supertrend)];
 
   if (displayLabel === "RENFORCER" && watchLevel) {
     children.push(
@@ -374,13 +387,81 @@ async function processSymbol(watchlistEntry, horizonSet = "medium") {
 
   const data = computeIndicators(candles);
   const trendAlert = detectTrendReversalAt(data, data.length - 1);
+  const crossProximity = crossProximityStatus(data, data.length - 1);
   const supertrend = supertrendStatus(candles);
   const variations = computeVariations(candles);
 
   const horizonData = await buildHorizonData(watchlistEntry, candles, HORIZON_SETS[horizonSet] || HORIZON_SETS.medium);
   const levels = analyzeSymbol(result.close, horizonData);
 
-  return { result, trendAlert, supertrend, levels, variations };
+  return { result, trendAlert, crossProximity, supertrend, levels, variations };
+}
+
+// Notification navigateur locale pour l'alerte precoce de croisement, sur
+// le meme principe que les notifications de stop-loss (portfolio.js):
+// declenchee uniquement quand la severite empire (rien -> proche ->
+// imminent) par rapport a la derniere notification envoyee pour ce
+// symbole, pour ne pas spammer tant que la situation ne change pas.
+const CROSS_SEVERITY = { proche: 1, imminent: 2 };
+const NOTIFIED_CROSS_KEY = "signaltrade_notified_cross_v1";
+
+function loadNotifiedCross() {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIFIED_CROSS_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+let notifiedCross = loadNotifiedCross();
+
+function maybeNotifyCross(symbol, cp) {
+  const severity = cp ? CROSS_SEVERITY[cp.level] ?? 0 : 0;
+  const prevSeverity = notifiedCross[symbol] ?? 0;
+
+  if (severity > 0 && severity > prevSeverity && "Notification" in window && Notification.permission === "granted") {
+    const label = cp.pendingType === "golden" ? "Golden cross" : "Death cross";
+    const title = cp.level === "imminent" ? `${label} imminent : ${symbol}` : `${label} en approche : ${symbol}`;
+    const sign = cp.gapPct >= 0 ? "+" : "";
+    new Notification(title, { body: `Écart MM50/MM200 : ${sign}${cp.gapPct.toFixed(1)}%.`, tag: `cross-${symbol}` });
+  }
+
+  notifiedCross[symbol] = severity;
+  localStorage.setItem(NOTIFIED_CROSS_KEY, JSON.stringify(notifiedCross));
+}
+
+// Extension optionnelle (desactivee par defaut) des alertes de croisement
+// a l'ensemble du top 100, en plus des favoris/portefeuille toujours
+// verifies. Plus lourd (100 actifs a analyser) donc laisse au choix de
+// l'utilisateur plutot qu'active d'office.
+const NOTIFY_TOP100_KEY = "signaltrade_notify_top100";
+
+function isTop100CrossNotifyEnabled() {
+  return localStorage.getItem(NOTIFY_TOP100_KEY) === "true";
+}
+
+async function checkTop100CrossNotifications() {
+  if (!isTop100CrossNotifyEnabled()) return;
+  try {
+    const universe = await getWatchlist(100);
+    const concurrency = 10;
+    for (let i = 0; i < universe.length; i += concurrency) {
+      const batch = universe.slice(i, i + concurrency);
+      await Promise.all(
+        batch.map(async (watchlistEntry) => {
+          try {
+            const candles = await fetchCandles(watchlistEntry);
+            if (candles.length <= CONFIG.warmupPeriod) return;
+            const data = computeIndicators(candles);
+            maybeNotifyCross(watchlistEntry.symbol, crossProximityStatus(data, data.length - 1));
+          } catch (e) {
+            console.error(watchlistEntry.symbol, e);
+          }
+        })
+      );
+    }
+  } catch (e) {
+    console.error("checkTop100CrossNotifications", e);
+  }
 }
 
 async function loadApp() {
@@ -455,7 +536,10 @@ async function ensureFavoriteEntries() {
   for (const watchlistEntry of favWatchlist) {
     try {
       const entry = await processSymbol(watchlistEntry, "long");
-      if (entry) results.push(entry);
+      if (entry) {
+        results.push(entry);
+        maybeNotifyCross(entry.result.symbol, entry.crossProximity);
+      }
     } catch (e) {
       console.error(watchlistEntry.symbol, e);
     }
@@ -692,6 +776,16 @@ function closeInfoModal() {
 document.addEventListener("DOMContentLoaded", () => {
   loadApp();
   checkPortfolioAlertsInBackground();
+  ensureFavoriteEntries().catch((e) => console.error("ensureFavoriteEntries (verification en arriere-plan)", e));
+  checkTop100CrossNotifications();
+
+  const notifyTop100Toggle = document.getElementById("notify-top100-toggle");
+  notifyTop100Toggle.checked = isTop100CrossNotifyEnabled();
+  notifyTop100Toggle.addEventListener("change", (e) => {
+    localStorage.setItem(NOTIFY_TOP100_KEY, e.target.checked ? "true" : "false");
+    if (e.target.checked) checkTop100CrossNotifications();
+  });
+
   document.getElementById("tab-market-btn").addEventListener("click", () => switchPage("market"));
   document.getElementById("tab-portfolio-btn").addEventListener("click", () => switchPage("portfolio"));
 

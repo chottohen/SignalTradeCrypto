@@ -27,3 +27,28 @@ function detectTrendReversalAt(data, i) {
   }
   return null;
 }
+
+// Alerte precoce: l'ecart MM50/MM200 se resserre vers zero sans qu'un
+// croisement confirme (detectTrendReversalAt) ne se soit encore produit.
+// pendingType est le croisement qui se formerait si la convergence se
+// poursuit (l'oppose du regime actuel).
+function crossProximityStatus(data, i) {
+  const lookback = CONFIG.crossConvergenceLookback;
+  if (i < lookback) return null;
+  const last = data[i];
+  const past = data[i - lookback];
+  if (last.emaTrend == null || past.emaTrend == null) return null;
+
+  const gapNow = ((last.emaSlow - last.emaTrend) / last.emaTrend) * 100;
+  const gapPast = ((past.emaSlow - past.emaTrend) / past.emaTrend) * 100;
+  const absGap = Math.abs(gapNow);
+  const converging = absGap < Math.abs(gapPast);
+
+  if (!converging || absGap >= CONFIG.crossWarningPct) return null;
+
+  return {
+    level: absGap < CONFIG.crossImminentPct ? "imminent" : "proche",
+    pendingType: gapNow < 0 ? "golden" : "death",
+    gapPct: gapNow,
+  };
+}

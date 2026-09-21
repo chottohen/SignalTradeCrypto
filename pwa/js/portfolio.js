@@ -170,6 +170,10 @@ async function checkPortfolioAlertsInBackground() {
       if (!entry) continue;
       try {
         const candles = await fetchCandles(entry);
+        if (candles.length > CONFIG.warmupPeriod) {
+          const data = computeIndicators(candles);
+          maybeNotifyCross(symbol, crossProximityStatus(data, data.length - 1));
+        }
         priced.push({ symbol, price: candles[candles.length - 1].close, holding: portfolio.holdings[symbol] });
       } catch (e) {
         console.error(symbol, e);
@@ -203,7 +207,7 @@ function updateNotifStatusUi() {
 }
 
 function holdingRowEl(priced, totalValue) {
-  const { symbol, price, holding, levels } = priced;
+  const { symbol, price, holding, levels, crossProximity } = priced;
   const valueUsd = price * holding.quantity;
   const pnlUsd = valueUsd - holding.costBasisUsd;
   const pnlPct = holding.costBasisUsd > 0 ? (pnlUsd / holding.costBasisUsd) * 100 : 0;
@@ -223,6 +227,12 @@ function holdingRowEl(priced, totalValue) {
   ]);
 
   const children = [row];
+
+  const crossTag = crossProximityEl(crossProximity);
+  if (crossTag) {
+    crossTag.style.padding = "0 14px 8px";
+    children.push(crossTag);
+  }
 
   if (levels) {
     const { nearestSupport, nearestResistance } = nearestPair(levels, price);
@@ -333,7 +343,13 @@ async function renderPortfolioPage() {
       const price = candles[candles.length - 1].close;
       const horizonData = await buildHorizonData(entry, candles, HORIZON_SETS.long);
       const levels = analyzeSymbol(price, horizonData);
-      priced.push({ symbol, price, holding: portfolio.holdings[symbol], levels });
+      let crossProximity = null;
+      if (candles.length > CONFIG.warmupPeriod) {
+        const data = computeIndicators(candles);
+        crossProximity = crossProximityStatus(data, data.length - 1);
+        maybeNotifyCross(symbol, crossProximity);
+      }
+      priced.push({ symbol, price, holding: portfolio.holdings[symbol], levels, crossProximity });
     } catch (e) {
       console.error(symbol, e);
     }

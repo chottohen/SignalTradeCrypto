@@ -52,6 +52,15 @@ const CONFIG = {
 
   supertrendPeriod: 10,
   supertrendMultiplier: 2.0,
+
+  // Alerte precoce golden/death cross: ecart MM50/MM200 en % de la MM200.
+  // "proche" sous crossWarningPct, "imminent" sous crossImminentPct, dans
+  // les deux cas seulement si l'ecart s'est resserre sur les
+  // crossConvergenceLookback derniers jours (evite les faux positifs ou
+  // les deux moyennes stagnent proches sans converger).
+  crossWarningPct: 2,
+  crossImminentPct: 0.5,
+  crossConvergenceLookback: 5,
 };
 
 // Loi de puissance BTC: parametres pre-calcules hors-ligne (power_law.py),
