@@ -94,6 +94,29 @@ async function findDriveFileId() {
   return driveFileId;
 }
 
+async function readDriveBackup(fileId) {
+  const resp = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+// Date de la derniere sauvegarde Drive vue par cet appareil (ecrite ou
+// restauree). Si la sauvegarde distante est plus recente, un autre appareil
+// l'a modifiee depuis: l'ecraser sans prevenir ferait perdre ces donnees.
+const LAST_SYNC_KEY = "signaltrade_drive_last_sync";
+
+function getLastSync() {
+  return Number(localStorage.getItem(LAST_SYNC_KEY)) || 0;
+}
+
+function setLastSync(timestamp) {
+  localStorage.setItem(LAST_SYNC_KEY, String(timestamp));
+}
+
+function countTransactions(backup) {
+  return ((backup && backup.portfolio && backup.portfolio.transactions) || []).length;
+}
+
 async function saveToDrive() {
   if (!driveAccessToken) {
     setDriveStatus("Connectez-vous d'abord à Google Drive.");
@@ -101,8 +124,25 @@ async function saveToDrive() {
   }
   setDriveStatus("Sauvegarde en cours…");
   try {
-    const payload = JSON.stringify({ favorites: Array.from(favorites), portfolio, savedAt: Date.now() });
+    const savedAt = Date.now();
+    const payload = JSON.stringify({ favorites: Array.from(favorites), portfolio, savedAt });
     const fileId = await findDriveFileId();
+
+    if (fileId) {
+      const remote = await readDriveBackup(fileId);
+      if (remote.savedAt > getLastSync()) {
+        const remoteDate = new Date(remote.savedAt).toLocaleString("fr-FR");
+        const message =
+          `La sauvegarde Drive (${remoteDate}, ${countTransactions(remote)} transaction(s)) contient des données que cet appareil n'a pas récupérées ` +
+          `(enregistrées depuis un autre appareil ?).\n\n` +
+          `Cet appareil : ${portfolio.transactions.length} transaction(s).\n\n` +
+          `Écraser la sauvegarde Drive avec les données de cet appareil ?`;
+        if (!confirm(message)) {
+          setDriveStatus("Sauvegarde annulée : la sauvegarde Drive est conservée. Utilisez « Restaurer » pour la récupérer.");
+          return;
+        }
+      }
+    }
 
     const metadata = { name: DRIVE_FILE_NAME, mimeType: "application/json" };
     if (!fileId) metadata.parents = ["appDataFolder"];
@@ -123,6 +163,7 @@ async function saveToDrive() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     driveFileId = data.id;
+    setLastSync(savedAt);
     setDriveStatus(`Sauvegardé sur Drive à ${new Date().toLocaleTimeString("fr-FR")}.`);
   } catch (e) {
     setDriveStatus(`Erreur: ${e.message}`);
@@ -141,9 +182,7 @@ async function restoreFromDrive() {
       setDriveStatus("Aucune sauvegarde trouvée sur Drive.");
       return;
     }
-    const resp = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
+    const data = await readDriveBackup(fileId);
 
     favorites.clear();
     (data.favorites || []).forEach((s) => favorites.add(s));
@@ -151,6 +190,7 @@ async function restoreFromDrive() {
 
     portfolio = data.portfolio || portfolio;
     savePortfolio();
+    setLastSync(data.savedAt || Date.now());
     favoriteEntriesLoaded = false;
     rankedEntriesLoaded = false;
 
