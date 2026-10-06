@@ -12,6 +12,19 @@ const DRIVE_FILE_NAME = "signaltrade-data.json";
 let driveAccessToken = null;
 let driveTokenClient = null;
 let driveFileId = null;
+let pendingRestoreAfterConnect = false;
+let restorePromptDismissed = false;
+
+// Un appareil "vide" n'a jamais enregistre de transaction: c'est le cas d'un
+// nouveau telephone/ordinateur, ou le portefeuille est encore a son etat
+// initial et ou une restauration depuis Drive est probablement souhaitee.
+function isDeviceEmpty() {
+  return portfolio.transactions.length === 0;
+}
+
+function maybeShowRestorePrompt() {
+  document.getElementById("restore-prompt").hidden = !(isDeviceEmpty() && !restorePromptDismissed);
+}
 
 function setDriveStatus(text) {
   document.getElementById("drive-status").textContent = text;
@@ -30,12 +43,17 @@ function initDriveTokenClient() {
     scope: GOOGLE_DRIVE_SCOPE,
     callback: (response) => {
       if (response.error) {
+        pendingRestoreAfterConnect = false;
         setDriveStatus(`Erreur de connexion Google: ${response.error}`);
         return;
       }
       driveAccessToken = response.access_token;
       setDriveConnectedUi(true);
       setDriveStatus("Connecté à Google Drive.");
+      if (pendingRestoreAfterConnect) {
+        pendingRestoreAfterConnect = false;
+        restoreFromDrive();
+      }
     },
   });
   return driveTokenClient;
@@ -44,6 +62,7 @@ function initDriveTokenClient() {
 function connectDrive() {
   const client = initDriveTokenClient();
   if (!client) {
+    pendingRestoreAfterConnect = false;
     setDriveStatus("Service Google indisponible (hors ligne ?).");
     return;
   }
@@ -136,6 +155,7 @@ async function restoreFromDrive() {
     rankedEntriesLoaded = false;
 
     renderPortfolioPage();
+    maybeShowRestorePrompt();
     setDriveStatus(`Restauré (sauvegarde du ${new Date(data.savedAt).toLocaleString("fr-FR")}).`);
   } catch (e) {
     setDriveStatus(`Erreur: ${e.message}`);
@@ -146,4 +166,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("drive-connect-btn").addEventListener("click", connectDrive);
   document.getElementById("drive-save-btn").addEventListener("click", saveToDrive);
   document.getElementById("drive-restore-btn").addEventListener("click", restoreFromDrive);
+
+  document.getElementById("restore-prompt-yes").addEventListener("click", () => {
+    restorePromptDismissed = true;
+    maybeShowRestorePrompt();
+    if (driveAccessToken) {
+      restoreFromDrive();
+    } else {
+      pendingRestoreAfterConnect = true;
+      connectDrive();
+    }
+  });
+  document.getElementById("restore-prompt-later").addEventListener("click", () => {
+    restorePromptDismissed = true;
+    maybeShowRestorePrompt();
+  });
 });

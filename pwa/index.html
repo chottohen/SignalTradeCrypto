@@ -48,6 +48,13 @@
     <div id="cards"></div>
   </div>
   <div id="portfolio-page" style="display:none;">
+    <div id="restore-prompt" class="restore-prompt" hidden>
+      <p class="restore-prompt-text">Cet appareil est vide. Restaurer votre portefeuille et vos favoris depuis la sauvegarde Google Drive ?</p>
+      <div class="restore-prompt-actions">
+        <button id="restore-prompt-yes" class="drive-btn primary" type="button">Restaurer depuis Drive</button>
+        <button id="restore-prompt-later" class="drive-btn" type="button">Plus tard</button>
+      </div>
+    </div>
     <div class="drive-sync">
       <button id="drive-connect-btn" class="drive-btn primary" type="button">Connecter Google Drive</button>
       <button id="drive-save-btn" class="drive-btn" type="button" style="display:none;">Sauvegarder</button>

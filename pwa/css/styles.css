@@ -616,6 +616,28 @@ main {
   flex: 1 1 100%;
 }
 
+.restore-prompt {
+  background: #EAF3DE;
+  border: 1px solid #3B6D11;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.restore-prompt[hidden] {
+  display: none;
+}
+.restore-prompt-text {
+  font-size: 13px;
+  color: #173404;
+  line-height: 1.45;
+  margin: 0 0 10px;
+}
+.restore-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .notif-checkbox-label {
   display: flex;
   align-items: flex-start;

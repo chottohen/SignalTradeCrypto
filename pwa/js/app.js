@@ -914,7 +914,10 @@ function switchPage(page) {
   document.getElementById("portfolio-page").style.display = page === "portfolio" ? "" : "none";
   document.getElementById("portfolio-actions").style.display = page === "portfolio" ? "flex" : "none";
   document.body.classList.toggle("has-trade-bar", page === "portfolio");
-  if (page === "portfolio") renderPortfolioPage();
+  if (page === "portfolio") {
+    maybeShowRestorePrompt();
+    renderPortfolioPage();
+  }
 }
 
 // --- Menu et notices d'aide ---
