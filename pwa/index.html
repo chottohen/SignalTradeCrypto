@@ -62,7 +62,7 @@
       <p id="drive-status" class="drive-status"></p>
     </div>
     <div class="drive-sync">
-      <button id="notif-enable-btn" class="drive-btn" type="button" style="display:none;">🔔 Activer les alertes stop-loss</button>
+      <button id="notif-enable-btn" class="drive-btn" type="button" style="display:none;">🔔 Activer les alertes (stop-loss, take-profit, croisement)</button>
       <p id="notif-status" class="drive-status"></p>
     </div>
     <div class="drive-sync">
@@ -114,6 +114,14 @@
     <label class="trade-field" id="trade-stoploss-field" style="display:none;">
       <span>Stop-loss indicatif (USD)</span>
       <input type="number" id="trade-stoploss-input" inputmode="decimal" min="0" step="any">
+    </label>
+    <label class="trade-field" id="trade-takeprofit-field" style="display:none;">
+      <span>Take-profit indicatif (USD)</span>
+      <input type="number" id="trade-takeprofit-input" inputmode="decimal" min="0" step="any">
+    </label>
+    <label class="trade-field" id="trade-note-field" style="display:none;">
+      <span>Note (raison d'achat, stratégie de suivi) — facultatif</span>
+      <textarea id="trade-note-input" rows="2"></textarea>
     </label>
     <p id="trade-error" class="trade-error" style="display:none;"></p>
     <div class="trade-modal-buttons">

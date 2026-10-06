@@ -231,6 +231,9 @@ h1 {
 .tab-badge.orange {
   background: #854F0B;
 }
+.tab-badge.blue {
+  background: #185FA5;
+}
 
 .macro-row {
   display: flex;
@@ -784,6 +787,13 @@ main {
 .history-item.stop-red { background: #FCEBEB; }
 .history-item.stop-orange { background: #FAEEDA; }
 .history-item.stop-green { background: #EAF3DE; }
+.history-item.stop-tp-hit {
+  border-radius: 8px;
+  padding: 8px;
+  margin: 4px 0;
+  border-bottom: none;
+  background: #E6F1FB;
+}
 
 .history-stoploss {
   display: flex;
@@ -816,6 +826,51 @@ main {
 .history-stoploss-badge.stop-red { background: #A32D2D; }
 .history-stoploss-badge.stop-orange { background: #854F0B; }
 .history-stoploss-badge.stop-green { background: #3B6D11; }
+.history-stoploss-badge.tp-hit { background: #185FA5; }
+.history-stoploss-badge.tp-near { background: #854F0B; }
+.history-stoploss-badge.tp-far { background: #3B6D11; }
+
+.holding-alert-tag {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+  padding: 0 14px 8px;
+}
+
+.holding-note {
+  padding: 0 14px 10px;
+}
+.holding-note-text {
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #F1EFE8;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.holding-note-text.empty {
+  color: #5F5E5A;
+  font-style: italic;
+}
+.holding-note-input,
+.trade-field textarea {
+  width: 100%;
+  border: 1px solid #E3E1D8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #FFFFFF;
+  color: #2C2C2A;
+  resize: vertical;
+}
+.holding-note-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
 
 #portfolio-alert:not(:empty) {
   margin-bottom: 10px;

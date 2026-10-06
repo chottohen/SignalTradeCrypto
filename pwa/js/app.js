@@ -592,15 +592,34 @@ function loadNotifiedCross() {
 }
 let notifiedCross = loadNotifiedCross();
 
+// Affiche une notification systeme. Chrome sur Android interdit
+// "new Notification()" (il exige le service worker), d'ou le passage par
+// registration.showNotification(), avec repli sur le constructeur ailleurs.
+async function showLocalNotification(title, options) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await registration.showNotification(title, options);
+        return;
+      }
+    }
+    new Notification(title, options);
+  } catch (e) {
+    console.error("notification", e);
+  }
+}
+
 function maybeNotifyCross(symbol, cp) {
   const severity = cp ? CROSS_SEVERITY[cp.level] ?? 0 : 0;
   const prevSeverity = notifiedCross[symbol] ?? 0;
 
-  if (severity > 0 && severity > prevSeverity && "Notification" in window && Notification.permission === "granted") {
+  if (severity > 0 && severity > prevSeverity) {
     const label = cp.pendingType === "golden" ? "Golden cross" : "Death cross";
     const title = cp.level === "imminent" ? `${label} imminent : ${symbol}` : `${label} en approche : ${symbol}`;
     const sign = cp.gapPct >= 0 ? "+" : "";
-    new Notification(title, { body: `Écart MM50/MM200 : ${sign}${cp.gapPct.toFixed(1)}%.`, tag: `cross-${symbol}` });
+    showLocalNotification(title, { body: `Écart MM50/MM200 : ${sign}${cp.gapPct.toFixed(1)}%.`, tag: `cross-${symbol}` });
   }
 
   notifiedCross[symbol] = severity;
@@ -959,6 +978,14 @@ document.addEventListener("DOMContentLoaded", () => {
   checkPortfolioAlertsInBackground();
   ensureFavoriteEntries().catch((e) => console.error("ensureFavoriteEntries (verification en arriere-plan)", e));
   checkTop100CrossNotifications();
+
+  // Alertes SL/TP: reverification toutes les 5 minutes tant que l'appli est
+  // ouverte, et au retour sur l'appli (telephone deverrouille, onglet
+  // reaffiche). Pas de verification appli fermee: il n'y a pas de serveur.
+  setInterval(checkPortfolioAlertsInBackground, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkPortfolioAlertsInBackground();
+  });
 
   const notifyTop100Toggle = document.getElementById("notify-top100-toggle");
   notifyTop100Toggle.checked = isTop100CrossNotifyEnabled();

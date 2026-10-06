@@ -26,7 +26,7 @@ function savePortfolio() {
 // Cout d'acquisition suivi en moyenne ponderee (pas de FIFO/LIFO): a chaque
 // vente partielle, on retire du cout de base la meme proportion que la part
 // vendue de la position, ce qui preserve le cout moyen par unite restante.
-function executeTrade(symbol, side, usdAmount, cryptoAmount, price, stopLoss) {
+function executeTrade(symbol, side, usdAmount, cryptoAmount, price, stopLoss, takeProfit) {
   if (side === "BUY") {
     portfolio.cashUsd -= usdAmount;
     const holding = portfolio.holdings[symbol] || { quantity: 0, costBasisUsd: 0 };
@@ -52,7 +52,23 @@ function executeTrade(symbol, side, usdAmount, cryptoAmount, price, stopLoss) {
     cryptoAmount,
     price,
     stopLoss: side === "BUY" ? stopLoss : null,
+    takeProfit: side === "BUY" ? takeProfit ?? null : null,
   });
+  savePortfolio();
+}
+
+// Notes libres par position (raison d'achat, strategie de suivi...), rangees
+// dans le portefeuille pour etre sauvegardees avec lui sur Drive. Creees a la
+// demande: les anciennes sauvegardes n'ont pas ce champ.
+function getNote(symbol) {
+  return (portfolio.notes && portfolio.notes[symbol]) || "";
+}
+
+function setNote(symbol, text) {
+  if (!portfolio.notes) portfolio.notes = {};
+  const trimmed = text.trim();
+  if (trimmed) portfolio.notes[symbol] = trimmed;
+  else delete portfolio.notes[symbol];
   savePortfolio();
 }
 
@@ -64,6 +80,15 @@ function stopLossStatus(currentPrice, stopLoss) {
   if (currentPrice <= stopLoss) return "red";
   const distancePct = ((currentPrice - stopLoss) / currentPrice) * 100;
   return distancePct < 5 ? "orange" : "green";
+}
+
+// Meme schema pour le take-profit: "hit" si le cours l'a atteint ou depasse,
+// "near" a moins de 5% en dessous, "far" sinon. null si non renseigne.
+function takeProfitStatus(currentPrice, takeProfit) {
+  if (takeProfit == null || !(takeProfit > 0)) return null;
+  if (currentPrice >= takeProfit) return "hit";
+  const distancePct = ((takeProfit - currentPrice) / currentPrice) * 100;
+  return distancePct < 5 ? "near" : "far";
 }
 
 // Notification navigateur locale (pas de push, pas de serveur): declenchee
@@ -83,50 +108,90 @@ function loadNotifiedAlerts() {
 }
 let notifiedAlerts = loadNotifiedAlerts();
 
-function maybeNotify(tx, symbol, status) {
-  const severity = STOP_LOSS_SEVERITY[status] ?? -1;
-  const prevSeverity = notifiedAlerts[tx.id] ?? -1;
-
-  if (status !== "green" && severity > prevSeverity && "Notification" in window && Notification.permission === "granted") {
-    const title = status === "red" ? `Stop-loss atteint : ${symbol}` : `Stop-loss proche : ${symbol}`;
-    const body =
-      status === "red"
-        ? `Le cours de ${symbol} est passé sous votre stop-loss (${formatPrice(tx.stopLoss)} $).`
-        : `Le cours de ${symbol} approche de votre stop-loss (${formatPrice(tx.stopLoss)} $, moins de 5% d'écart).`;
-    new Notification(title, { body, tag: tx.id });
+// Severite commune SL/TP: 0 = loin, 1 = proche, 2 = atteint. On ne notifie
+// que lorsqu'elle monte (>= 1 et superieure a la derniere notifiee); la
+// cle distingue le stop-loss (id) du take-profit (id + ":tp") d'une meme ligne.
+function notifyOnWorsening(key, severity, title, body) {
+  const prevSeverity = notifiedAlerts[key] ?? -1;
+  if (severity >= 1 && severity > prevSeverity) {
+    showLocalNotification(title, { body, tag: key });
   }
-
-  notifiedAlerts[tx.id] = severity;
+  notifiedAlerts[key] = severity;
   localStorage.setItem(NOTIFIED_ALERTS_KEY, JSON.stringify(notifiedAlerts));
 }
 
-function computeStopLossAlerts(priced) {
-  let redCount = 0;
-  let orangeCount = 0;
-  priced.forEach((p) => {
-    portfolio.transactions
-      .filter((t) => t.symbol === p.symbol && t.side === "BUY" && t.stopLoss != null)
-      .forEach((t) => {
-        const status = stopLossStatus(p.price, t.stopLoss);
-        if (status === "red") redCount++;
-        else if (status === "orange") orangeCount++;
-        maybeNotify(t, p.symbol, status);
-      });
-  });
-  return { redCount, orangeCount };
+function maybeNotify(tx, symbol, status) {
+  const severity = STOP_LOSS_SEVERITY[status] ?? -1;
+  const title = status === "red" ? `Stop-loss atteint : ${symbol}` : `Stop-loss proche : ${symbol}`;
+  const body =
+    status === "red"
+      ? `Le cours de ${symbol} est passé sous votre stop-loss (${formatPrice(tx.stopLoss)} $).`
+      : `Le cours de ${symbol} approche de votre stop-loss (${formatPrice(tx.stopLoss)} $, moins de 5% d'écart).`;
+  notifyOnWorsening(tx.id, severity, title, body);
 }
 
-function updateTabBadge(redCount, orangeCount) {
+const TAKE_PROFIT_SEVERITY = { far: 0, near: 1, hit: 2 };
+
+function maybeNotifyTakeProfit(tx, symbol, status) {
+  const severity = TAKE_PROFIT_SEVERITY[status] ?? -1;
+  const title = status === "hit" ? `Take-profit atteint : ${symbol}` : `Take-profit proche : ${symbol}`;
+  const body =
+    status === "hit"
+      ? `Le cours de ${symbol} a atteint votre take-profit (${formatPrice(tx.takeProfit)} $).`
+      : `Le cours de ${symbol} approche de votre take-profit (${formatPrice(tx.takeProfit)} $, moins de 5% d'écart).`;
+  notifyOnWorsening(`${tx.id}:tp`, severity, title, body);
+}
+
+// Lignes d'achat a evaluer pour un symbole detenu: celles qui portent un
+// stop-loss et/ou un take-profit.
+function alertLinesFor(symbol) {
+  return portfolio.transactions.filter(
+    (t) => t.symbol === symbol && t.side === "BUY" && (t.stopLoss != null || t.takeProfit != null)
+  );
+}
+
+// Compte les alertes par niveau pour un symbole, sans effet de bord.
+function symbolAlertCounts(symbol, price) {
+  const counts = { slHit: 0, slNear: 0, tpHit: 0, tpNear: 0 };
+  alertLinesFor(symbol).forEach((t) => {
+    const sl = stopLossStatus(price, t.stopLoss);
+    const tp = takeProfitStatus(price, t.takeProfit);
+    if (sl === "red") counts.slHit++;
+    else if (sl === "orange") counts.slNear++;
+    if (tp === "hit") counts.tpHit++;
+    else if (tp === "near") counts.tpNear++;
+  });
+  return counts;
+}
+
+function computeStopLossAlerts(priced) {
+  const total = { slHit: 0, slNear: 0, tpHit: 0, tpNear: 0 };
+  priced.forEach((p) => {
+    alertLinesFor(p.symbol).forEach((t) => {
+      const sl = stopLossStatus(p.price, t.stopLoss);
+      const tp = takeProfitStatus(p.price, t.takeProfit);
+      if (sl) maybeNotify(t, p.symbol, sl);
+      if (tp) maybeNotifyTakeProfit(t, p.symbol, tp);
+    });
+    const counts = symbolAlertCounts(p.symbol, p.price);
+    Object.keys(total).forEach((k) => (total[k] += counts[k]));
+  });
+  return total;
+}
+
+function updateTabBadge(counts) {
   const badge = document.getElementById("portfolio-tab-badge");
-  if (redCount > 0) {
+  if (counts.slHit > 0) {
     badge.className = "tab-badge red";
-    badge.style.display = "inline-block";
-  } else if (orangeCount > 0) {
+  } else if (counts.tpHit > 0) {
+    badge.className = "tab-badge blue";
+  } else if (counts.slNear > 0 || counts.tpNear > 0) {
     badge.className = "tab-badge orange";
-    badge.style.display = "inline-block";
   } else {
     badge.style.display = "none";
+    return;
   }
+  badge.style.display = "inline-block";
 }
 
 // Snapshot des derniers prix recuperes par renderPortfolioPage() (ou par le
@@ -138,18 +203,26 @@ let lastPricedHoldings = [];
 function renderPortfolioAlert() {
   const container = document.getElementById("portfolio-alert");
   container.innerHTML = "";
-  const { redCount, orangeCount } = computeStopLossAlerts(lastPricedHoldings);
-  updateTabBadge(redCount, orangeCount);
-  if (redCount === 0 && orangeCount === 0) return;
+  const counts = computeStopLossAlerts(lastPricedHoldings);
+  updateTabBadge(counts);
+  const nearCount = counts.slNear + counts.tpNear;
+  if (counts.slHit === 0 && counts.tpHit === 0 && nearCount === 0) return;
 
   const parts = [];
-  if (redCount > 0) parts.push(`${redCount} stop-loss atteint${redCount > 1 ? "s" : ""}`);
-  if (orangeCount > 0) parts.push(`${orangeCount} proche${orangeCount > 1 ? "s" : ""} du niveau actuel`);
-  const bg = redCount > 0 ? "#FCEBEB" : "#FAEEDA";
-  const color = redCount > 0 ? "#501313" : "#412402";
-  container.appendChild(
-    el("div", { class: "alert-box", style: `background:${bg};color:${color};`, textContent: `⚠ ${parts.join(" · ")}` })
-  );
+  if (counts.slHit > 0) parts.push(`${counts.slHit} stop-loss atteint${counts.slHit > 1 ? "s" : ""}`);
+  if (counts.tpHit > 0) parts.push(`${counts.tpHit} take-profit atteint${counts.tpHit > 1 ? "s" : ""}`);
+  if (nearCount > 0) parts.push(`${nearCount} proche${nearCount > 1 ? "s" : ""} d'un SL/TP`);
+
+  let bg = "#FAEEDA";
+  let color = "#412402";
+  if (counts.slHit > 0) {
+    bg = "#FCEBEB";
+    color = "#501313";
+  } else if (counts.tpHit > 0) {
+    bg = "#E6F1FB";
+    color = "#0C447C";
+  }
+  container.appendChild(el("div", { class: "alert-box", style: `background:${bg};color:${color};`, textContent: `⚠ ${parts.join(" · ")}` }));
 }
 
 // Verifie les stop-loss sans se soucier de la page active, pour que le
@@ -158,7 +231,7 @@ function renderPortfolioAlert() {
 async function checkPortfolioAlertsInBackground() {
   const symbols = Object.keys(portfolio.holdings);
   if (symbols.length === 0) {
-    updateTabBadge(0, 0);
+    updateTabBadge({ slHit: 0, slNear: 0, tpHit: 0, tpNear: 0 });
     return;
   }
   try {
@@ -196,7 +269,7 @@ function updateNotifStatusUi() {
   }
   if (Notification.permission === "granted") {
     btn.style.display = "none";
-    status.textContent = "Alertes stop-loss activées.";
+    status.textContent = "Alertes stop-loss, take-profit et croisement activées.";
   } else if (Notification.permission === "denied") {
     btn.style.display = "none";
     status.textContent = "Notifications bloquées (à réactiver dans les réglages du navigateur).";
@@ -204,6 +277,54 @@ function updateNotifStatusUi() {
     btn.style.display = "inline-block";
     status.textContent = "";
   }
+}
+
+// Resume des alertes SL/TP d'une position, visible sans deplier l'historique.
+function holdingAlertTagEl(symbol, price) {
+  const c = symbolAlertCounts(symbol, price);
+  const near = c.slNear + c.tpNear;
+  if (!c.slHit && !c.tpHit && !near) return null;
+
+  const parts = [];
+  if (c.slHit) parts.push(`${c.slHit} stop-loss atteint${c.slHit > 1 ? "s" : ""}`);
+  if (c.tpHit) parts.push(`${c.tpHit} take-profit atteint${c.tpHit > 1 ? "s" : ""}`);
+  if (near) parts.push(`${near} proche${near > 1 ? "s" : ""} d'un SL/TP`);
+  const color = c.slHit ? RED : c.tpHit ? "#0C447C" : AMBER;
+  return el("p", { class: "holding-alert-tag", style: `color:${color};`, textContent: `⚠ ${parts.join(" · ")}` });
+}
+
+// Note libre de la position, affichee sur la carte; un clic ouvre l'edition.
+function noteBlockEl(symbol) {
+  const wrapper = el("div", { class: "holding-note" });
+
+  const showText = () => {
+    wrapper.innerHTML = "";
+    const text = getNote(symbol);
+    const display = el("p", {
+      class: text ? "holding-note-text" : "holding-note-text empty",
+      textContent: text || "Ajouter une note (raison d'achat, stratégie de suivi…)",
+    });
+    display.addEventListener("click", showEditor);
+    wrapper.appendChild(display);
+  };
+
+  const showEditor = () => {
+    wrapper.innerHTML = "";
+    const area = el("textarea", { class: "holding-note-input", rows: 3, value: getNote(symbol), placeholder: "Raison d'achat, stratégie de suivi…" });
+    const save = el("button", { class: "drive-btn primary", type: "button", textContent: "Enregistrer" });
+    const cancel = el("button", { class: "drive-btn", type: "button", textContent: "Annuler" });
+    save.addEventListener("click", () => {
+      setNote(symbol, area.value);
+      showText();
+    });
+    cancel.addEventListener("click", showText);
+    wrapper.appendChild(area);
+    wrapper.appendChild(el("div", { class: "holding-note-actions" }, [save, cancel]));
+    area.focus();
+  };
+
+  showText();
+  return wrapper;
 }
 
 function holdingRowEl(priced, totalValue) {
@@ -234,6 +355,11 @@ function holdingRowEl(priced, totalValue) {
     children.push(crossTag);
   }
 
+  const alertTag = holdingAlertTagEl(symbol, price);
+  if (alertTag) children.push(alertTag);
+
+  children.push(noteBlockEl(symbol));
+
   if (levels) {
     const { nearestSupport, nearestResistance } = nearestPair(levels, price);
     if (nearestSupport || nearestResistance) {
@@ -259,6 +385,7 @@ function holdingRowEl(priced, totalValue) {
 }
 
 const STOP_LOSS_BADGE_LABEL = { red: "Stop atteint", orange: "Stop proche", green: "Stop loin" };
+const TAKE_PROFIT_BADGE_LABEL = { hit: "TP atteint", near: "TP proche", far: "TP loin" };
 
 function renderHistoryFor(symbol, container, currentPrice) {
   container.innerHTML = "";
@@ -271,6 +398,15 @@ function renderHistoryFor(symbol, container, currentPrice) {
     const sideLabel = t.side === "BUY" ? "Achat" : "Vente";
     const sideColor = t.side === "BUY" ? GREEN : RED;
     const status = t.side === "BUY" ? stopLossStatus(currentPrice, t.stopLoss) : null;
+    const tpStatus = t.side === "BUY" ? takeProfitStatus(currentPrice, t.takeProfit) : null;
+
+    // Couleur de la ligne: stop-loss casse > take-profit atteint > proche
+    // (SL ou TP) > loin.
+    let rowStatus = null;
+    if (status === "red") rowStatus = "red";
+    else if (tpStatus === "hit") rowStatus = "tp-hit";
+    else if (status === "orange" || tpStatus === "near") rowStatus = "orange";
+    else if (status === "green" || tpStatus === "far") rowStatus = "green";
 
     const children = [
       el("p", { class: "history-side", style: `color:${sideColor};`, textContent: sideLabel }),
@@ -303,9 +439,31 @@ function renderHistoryFor(symbol, container, currentPrice) {
         stopRow.push(el("span", { class: `history-stoploss-badge stop-${status}`, textContent: STOP_LOSS_BADGE_LABEL[status] }));
       }
       children.push(el("div", { class: "history-stoploss" }, stopRow));
+
+      const tpInput = el("input", {
+        type: "number",
+        class: "history-stoploss-input",
+        value: t.takeProfit != null ? t.takeProfit : "",
+        inputmode: "decimal",
+        step: "any",
+      });
+      tpInput.addEventListener("click", (e) => e.stopPropagation());
+      tpInput.addEventListener("change", (e) => {
+        const val = parseFloat(e.target.value);
+        t.takeProfit = isNaN(val) ? null : val;
+        savePortfolio();
+        renderHistoryFor(symbol, container, currentPrice);
+        renderPortfolioAlert();
+      });
+
+      const tpRow = [el("span", { textContent: "Take-profit :" }), tpInput];
+      if (tpStatus) {
+        tpRow.push(el("span", { class: `history-stoploss-badge tp-${tpStatus}`, textContent: TAKE_PROFIT_BADGE_LABEL[tpStatus] }));
+      }
+      children.push(el("div", { class: "history-stoploss" }, tpRow));
     }
 
-    container.appendChild(el("div", { class: status ? `history-item stop-${status}` : "history-item" }, children));
+    container.appendChild(el("div", { class: rowStatus ? `history-item stop-${rowStatus}` : "history-item" }, children));
   });
 }
 
@@ -387,6 +545,10 @@ function openTradeModal(side) {
   document.getElementById("trade-crypto-input").value = "";
   document.getElementById("trade-stoploss-input").value = "";
   document.getElementById("trade-stoploss-field").style.display = side === "BUY" ? "block" : "none";
+  document.getElementById("trade-takeprofit-input").value = "";
+  document.getElementById("trade-takeprofit-field").style.display = side === "BUY" ? "block" : "none";
+  document.getElementById("trade-note-input").value = "";
+  document.getElementById("trade-note-field").style.display = side === "BUY" ? "block" : "none";
   document.getElementById("trade-percent-field").style.display = side === "SELL" ? "block" : "none";
   document.getElementById("trade-percent-input").value = 0;
   document.getElementById("trade-percent-value").textContent = "0";
@@ -475,6 +637,7 @@ async function selectTradeSymbol(symbol) {
 
     if (tradeState.side === "BUY") {
       document.getElementById("trade-stoploss-input").value = nearestSupport ? nearestSupport.price : "";
+      document.getElementById("trade-takeprofit-input").value = nearestResistance ? nearestResistance.price : "";
     } else {
       const held = portfolio.holdings[symbol];
       tradeState.heldQuantity = held ? held.quantity : 0;
@@ -531,12 +694,22 @@ function confirmTrade() {
   }
 
   let stopLoss = null;
+  let takeProfit = null;
   if (tradeState.side === "BUY") {
     const stopLossVal = parseFloat(document.getElementById("trade-stoploss-input").value);
     stopLoss = isNaN(stopLossVal) ? null : stopLossVal;
+    const takeProfitVal = parseFloat(document.getElementById("trade-takeprofit-input").value);
+    takeProfit = isNaN(takeProfitVal) ? null : takeProfitVal;
+
+    // La note saisie a l'achat s'ajoute a celle de la position (sans l'ecraser).
+    const noteText = document.getElementById("trade-note-input").value.trim();
+    if (noteText) {
+      const existing = getNote(symbol);
+      setNote(symbol, existing ? `${existing}\n${noteText}` : noteText);
+    }
   }
 
-  executeTrade(symbol, tradeState.side, usdAmount, finalCryptoAmount, tradeState.price, stopLoss);
+  executeTrade(symbol, tradeState.side, usdAmount, finalCryptoAmount, tradeState.price, stopLoss, takeProfit);
   closeTradeModal();
   renderPortfolioPage();
 }
