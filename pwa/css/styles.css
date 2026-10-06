@@ -387,6 +387,142 @@ main {
   line-height: 1.4;
 }
 
+/* --- Onglets Resume / Details des fiches --- */
+
+.card-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #E3E1D8;
+  margin-bottom: 10px;
+}
+.card-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 4px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #5F5E5A;
+}
+.card-tab.active {
+  color: #173404;
+  font-weight: 600;
+  border-bottom-color: #3B6D11;
+}
+
+.detail-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #5F5E5A;
+  margin: 14px 0 8px;
+}
+.detail-title:first-child {
+  margin-top: 0;
+}
+.detail-muted {
+  font-size: 12px;
+  color: #5F5E5A;
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.kv {
+  background: #F1EFE8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.kv-label {
+  font-size: 10.5px;
+  color: #5F5E5A;
+  margin: 0 0 2px;
+}
+.kv-value {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.kv-sub {
+  font-size: 10.5px;
+  color: #5F5E5A;
+  margin: 2px 0 0;
+}
+.structure-line {
+  font-size: 12.5px;
+  background: #F1EFE8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+.confluence-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.confluence-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+.confluence-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: inline-block;
+}
+.dot.bull { background: #3B6D11; }
+.dot.bear { background: #A32D2D; }
+
+.sr-table-wrap {
+  overflow-x: auto;
+}
+.sr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.sr-table th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #5F5E5A;
+  padding: 0 8px 6px 0;
+  border-bottom: 1px solid #E3E1D8;
+  white-space: nowrap;
+}
+.sr-table td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid #F1EFE8;
+  white-space: nowrap;
+}
+.sr-kind-r { color: #501313; font-weight: 600; }
+.sr-kind-s { color: #173404; font-weight: 600; }
+
+@media (max-width: 360px) {
+  .kv-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 .alert-box {
   border-radius: 8px;
   padding: 8px 10px;

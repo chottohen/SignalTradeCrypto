@@ -169,7 +169,7 @@ function cardEl(entry) {
     variationCell("30 jours", variations.d30),
   ]);
 
-  const children = [header, rationale, crossProximityEl(crossProximity), supertrendEl(supertrend)];
+  const children = [rationale, crossProximityEl(crossProximity), supertrendEl(supertrend)];
 
   if (displayLabel === "RENFORCER" && watchLevel) {
     children.push(
@@ -209,7 +209,169 @@ function cardEl(entry) {
     );
   }
 
-  return el("div", { class: "card" }, children);
+  const summaryPanel = el("div", { class: "card-panel" }, children);
+  const detailsPanel = el("div", { class: "card-panel", hidden: true }, detailsContent(entry));
+
+  const tabSummary = el("button", { class: "card-tab active", type: "button", textContent: "Résumé" });
+  const tabDetails = el("button", { class: "card-tab", type: "button", textContent: "Détails" });
+  const selectTab = (showDetails) => {
+    tabSummary.classList.toggle("active", !showDetails);
+    tabDetails.classList.toggle("active", showDetails);
+    summaryPanel.hidden = showDetails;
+    detailsPanel.hidden = !showDetails;
+  };
+  tabSummary.addEventListener("click", () => selectTab(false));
+  tabDetails.addEventListener("click", () => selectTab(true));
+
+  return el("div", { class: "card" }, [
+    header,
+    el("div", { class: "card-tabs" }, [tabSummary, tabDetails]),
+    summaryPanel,
+    detailsPanel,
+  ]);
+}
+
+// --- Onglet "Détails" des fiches ---
+
+const HORIZON_LABEL = { court_terme: "court terme", moyen_terme: "moyen terme", long_terme: "long terme" };
+
+function signedPct(value) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function kvCell(label, value, sub, color) {
+  return el("div", { class: "kv" }, [
+    el("p", { class: "kv-label", textContent: label }),
+    el("p", { class: "kv-value", style: color ? `color:${color};` : "", textContent: value }),
+    sub ? el("p", { class: "kv-sub", textContent: sub }) : null,
+  ]);
+}
+
+function srTableEl(levels, currentPrice) {
+  const resistances = [...(levels.resistance || [])].sort((a, b) => a.price - b.price);
+  const supports = [...(levels.support || [])].sort((a, b) => b.price - a.price);
+  if (resistances.length === 0 && supports.length === 0) {
+    return el("p", { class: "detail-muted", textContent: "Aucun niveau détecté." });
+  }
+
+  const rowFor = (level, isResistance) => {
+    const days = Math.floor((Date.now() - level.lastTouch) / (1000 * 3600 * 24));
+    const distancePct = ((level.price - currentPrice) / currentPrice) * 100;
+    return el("tr", {}, [
+      el("td", {
+        class: isResistance ? "sr-kind-r" : "sr-kind-s",
+        textContent: `${isResistance ? "Résist." : "Support"} ${HORIZON_LABEL[level.horizon] || level.horizon}`,
+      }),
+      el("td", { textContent: formatPrice(level.price) }),
+      el("td", { textContent: signedPct(distancePct) }),
+      el("td", { textContent: String(level.touches) }),
+      el("td", { textContent: `${days} j` }),
+    ]);
+  };
+
+  const header = el("tr", {}, ["Niveau", "Prix", "Écart", "Touches", "Contact"].map((t) => el("th", { textContent: t })));
+  const rows = [...resistances.map((l) => rowFor(l, true)), ...supports.map((l) => rowFor(l, false))];
+  return el("div", { class: "sr-table-wrap" }, [
+    el("table", { class: "sr-table" }, [el("thead", {}, [header]), el("tbody", {}, rows)]),
+  ]);
+}
+
+function detailsContent(entry) {
+  const { result, trendAlert, levels, supertrend, crossProximity, indicators } = entry;
+  const sections = [];
+  const title = (text) => el("p", { class: "detail-title", textContent: text });
+
+  if (indicators) {
+    const ranked = [
+      ["prix", result.close],
+      ["MM20", indicators.emaFast],
+      ["MM50", indicators.emaSlow],
+      ["MM200", indicators.emaTrend],
+    ]
+      .sort((a, b) => b[1] - a[1])
+      .map((x) => x[0])
+      .join(" > ");
+
+    sections.push(title("Moyennes mobiles"));
+    sections.push(
+      el("div", { class: "kv-grid" }, [
+        kvCell("MM20", formatPrice(indicators.emaFast)),
+        kvCell("MM50", formatPrice(indicators.emaSlow)),
+        kvCell("MM200", formatPrice(indicators.emaTrend)),
+      ])
+    );
+    sections.push(el("p", { class: "structure-line", textContent: `Structure : ${ranked}` }));
+
+    let crossStatus = "aucun croisement en approche";
+    if (trendAlert) {
+      crossStatus = trendAlert.type === "RETOURNEMENT_HAUSSIER" ? "golden cross confirmé aujourd'hui" : "death cross confirmé aujourd'hui";
+    } else if (crossProximity) {
+      const kind = crossProximity.pendingType === "golden" ? "golden cross" : "death cross";
+      crossStatus = `${kind} ${crossProximity.level === "imminent" ? "imminent" : "en approche"}`;
+    }
+    const pastText =
+      indicators.gapPctPast != null ? ` (${signedPct(indicators.gapPctPast)} il y a ${CONFIG.crossConvergenceLookback} j)` : "";
+    sections.push(title("Golden / death cross"));
+    sections.push(
+      el("p", {
+        class: "structure-line",
+        textContent: `Statut : ${crossStatus} · écart MM50/MM200 : ${signedPct(indicators.gapPct)}${pastText} · seuils : proche < ${CONFIG.crossWarningPct}%, imminent < ${CONFIG.crossImminentPct}%`,
+      })
+    );
+
+    sections.push(title("Momentum"));
+    sections.push(
+      el("div", { class: "kv-grid" }, [
+        kvCell("RSI (14)", indicators.rsi.toFixed(1)),
+        kvCell("MACD hist.", `${indicators.macdHist >= 0 ? "+" : ""}${formatPrice(indicators.macdHist)}`, null, indicators.macdHist >= 0 ? GREEN : RED),
+        kvCell(
+          "ADX (14)",
+          indicators.adx.toFixed(1),
+          `seuil ${CONFIG.adxTrendThreshold} — ${indicators.adx > CONFIG.adxTrendThreshold ? "tendance confirmée" : "pas de tendance"}`
+        ),
+      ])
+    );
+
+    sections.push(title("Volatilité & suivi"));
+    sections.push(
+      el("div", { class: "kv-grid" }, [
+        kvCell("ATR (14)", formatPrice(indicators.atr), `${((indicators.atr / result.close) * 100).toFixed(1)}% du prix`),
+        supertrend
+          ? kvCell(
+              "Supertrend",
+              supertrend.direction === "HAUSSIER" ? "Haussier" : "Baissier",
+              `depuis ${supertrend.daysInDirection} j${supertrend.flippedToday ? " · retournement aujourd'hui" : ""}`,
+              supertrend.direction === "HAUSSIER" ? GREEN : RED
+            )
+          : kvCell("Supertrend", "—"),
+        kvCell("Figure", result.pattern ? String(result.pattern) : "—", result.pattern ? null : "aucune active"),
+      ])
+    );
+  }
+
+  const confList = (names, cls) =>
+    names.length
+      ? el("ul", { class: "confluence-list" }, names.map((n) => el("li", {}, [el("span", { class: `dot ${cls}` }), n])))
+      : el("p", { class: "detail-muted", textContent: "Aucun signal" });
+
+  sections.push(title("Confluence détaillée"));
+  sections.push(
+    el("div", { class: "confluence-cols" }, [
+      el("div", {}, [el("p", { class: "kv-label", textContent: "Haussier" }), confList(result.confirmationsBull || [], "bull")]),
+      el("div", {}, [el("p", { class: "kv-label", textContent: "Baissier" }), confList(result.confirmationsBear || [], "bear")]),
+    ])
+  );
+
+  sections.push(title("Support / résistance"));
+  sections.push(srTableEl(levels, result.close));
+  sections.push(
+    el("p", {
+      class: "detail-muted",
+      textContent: "Horizons affichés selon la vue : Top 10/Favoris = long terme, listes 👍/👎 = moyen terme, recherche = les 3.",
+    })
+  );
+
+  return sections;
 }
 
 function powerLawEl(info, quote = "USDT") {
@@ -394,7 +556,23 @@ async function processSymbol(watchlistEntry, horizonSet = "medium") {
   const horizonData = await buildHorizonData(watchlistEntry, candles, HORIZON_SETS[horizonSet] || HORIZON_SETS.medium);
   const levels = analyzeSymbol(result.close, horizonData);
 
-  return { result, trendAlert, crossProximity, supertrend, levels, variations };
+  // Valeurs brutes de la derniere bougie, pour l'onglet "Details" des fiches.
+  const lastRow = data[data.length - 1];
+  const pastRow = data[data.length - 1 - CONFIG.crossConvergenceLookback];
+  const gapOf = (row) => ((row.emaSlow - row.emaTrend) / row.emaTrend) * 100;
+  const indicators = {
+    emaFast: lastRow.emaFast,
+    emaSlow: lastRow.emaSlow,
+    emaTrend: lastRow.emaTrend,
+    rsi: lastRow.rsi,
+    macdHist: lastRow.macdHist,
+    adx: lastRow.adx,
+    atr: lastRow.atr,
+    gapPct: gapOf(lastRow),
+    gapPctPast: pastRow ? gapOf(pastRow) : null,
+  };
+
+  return { result, trendAlert, crossProximity, supertrend, levels, variations, indicators };
 }
 
 // Notification navigateur locale pour l'alerte precoce de croisement, sur
